@@ -225,3 +225,43 @@ func TestRankReplacesAWalkOnlyOriginOnceAndSaysSo(t *testing.T) {
 		t.Errorf("startcoord %q, want the user's 48.8619,2.347", got)
 	}
 }
+
+func TestRankKeepsTheOriginWhenADestinationCausedTheSnap(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, at(t, "20261118T0521"))
+	e.fake.file(t, navitia+"coords/*", "20261118T0521-nearby-forum-des-halles.json")
+	walk := readFixture(t, "20261118T0521-journey-forum-des-halles-la-defense.json")
+	viaRERA := readFixture(t, "20261118T0521-journey-chatelet-la-defense.json")
+	e.fake.handle(navitia+"journeys", func(w http.ResponseWriter, r *http.Request) {
+		// The point inside the Forum des Halles, and the station near it, get
+		// only a walk; any other trip has public transport.
+		to := r.URL.Query().Get("to")
+		if to == forumCoord || to == chateletLH {
+			writeJSON(w, http.StatusOK, string(walk))
+			return
+		}
+		writeJSON(w, http.StatusOK, string(viaRERA))
+	})
+	origin := "48.8566,2.3522"
+
+	out, err := e.svc.RankDestinations(t.Context(), transit.RankInput{
+		Origin: origin,
+		Destinations: []transit.DestinationInput{
+			destination("a", "48.8920,2.2380"), destination("forum", forum), destination("c", "48.8700,2.3000"),
+		},
+		DepartAt: "",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reqs := e.fake.requestsTo(navitia + "journeys")
+	last := reqs[len(reqs)-1]
+	if last.Query.Get("from") != "2.3522;48.8566" {
+		t.Errorf("c planned from %q, want the asked origin: the forum destination caused the snap",
+			last.Query.Get("from"))
+	}
+	if out.Origin.Resolved.SnappedFrom != nil {
+		t.Errorf("origin %+v, want it as asked", out.Origin.Resolved)
+	}
+}

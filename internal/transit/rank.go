@@ -97,9 +97,12 @@ func (s *Service) rankDestinations(ctx context.Context, in RankInput) (*RankOutp
 	out := &RankOutput{Origin: origin.endpoint(), Ranked: []Ranked{}, Failed: []Failed{}, Error: nil}
 	for i, d := range in.Destinations {
 		r, from, oneErr := s.rankOne(ctx, trip{asked: asked, from: origin}, d, depart, arriveBy[i])
-		// An origin replaced by a station for one destination stays replaced
-		// for the next ones, and the result says so.
-		if from.SnappedFrom != nil && origin.SnappedFrom == nil {
+		// When only the origin had to be replaced by a station, and that
+		// answered, it was the cause: it stays replaced for the next
+		// destinations, and the result says so. When the destination was
+		// replaced too, either may have been the cause, and the next
+		// destinations start from the origin as asked.
+		if oneErr == nil && origin.SnappedFrom == nil && from.SnappedFrom != nil && r.Resolved.SnappedFrom == nil {
 			origin = from
 			out.Origin = origin.endpoint()
 		}
