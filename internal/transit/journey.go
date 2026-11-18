@@ -119,6 +119,9 @@ func (s *Service) planJourney(ctx context.Context, in JourneyInput) (*JourneyOut
 	if err != nil {
 		return &JourneyOutput{Origin: q.from.endpoint(), Destination: nil, Journeys: nil, Error: nil}, err
 	}
+	// Citymapper gets the places as asked, the user's own position included,
+	// even when PRIM is asked from a nearby station.
+	asked := q
 	resp, err := s.journeys(ctx, &q)
 	out := &JourneyOutput{Origin: q.from.endpoint(), Destination: q.to.endpoint(), Journeys: nil, Error: nil}
 	if err != nil {
@@ -128,7 +131,7 @@ func (s *Service) planJourney(ctx context.Context, in JourneyInput) (*JourneyOut
 	if q.arrival {
 		arrival = q.when
 	}
-	link := s.citymapperURL(&q.from.Resolved, &q.to.Resolved, arrival)
+	link := s.citymapperURL(&asked.from.Resolved, &asked.to.Resolved, arrival)
 	disruptions := map[string]*navDisruption{}
 	for i := range resp.Disruptions {
 		disruptions[resp.Disruptions[i].ID] = &resp.Disruptions[i]

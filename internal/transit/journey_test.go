@@ -42,6 +42,14 @@ func TestWalkOnlyOriginIsReplacedByTheNearestStation(t *testing.T) {
 	if len(reqs) != 2 || reqs[1].Query.Get("from") != chateletLH || reqs[1].Query.Get("to") != laDefense {
 		t.Errorf("journeys requests %+v, want a second one from Châtelet - Les Halles to La Défense", reqs)
 	}
+	// Citymapper starts where the user is, not at the station chosen for PRIM.
+	link, err := url.Parse(out.Journeys[0].CitymapperURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := link.Query().Get("startcoord"); got != "48.8619,2.347" {
+		t.Errorf("startcoord %q, want the user's 48.8619,2.347", got)
+	}
 }
 
 func TestWalkOnlyAfterSnappingIsNoTransitRoute(t *testing.T) {
