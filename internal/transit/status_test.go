@@ -2,7 +2,11 @@ package transit_test
 
 import (
 	"net/http"
+	"slices"
+	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/tio-plato/paris-transit-mcp/internal/transit"
 )
@@ -149,5 +153,124 @@ func TestMetroBisLinesResolve(t *testing.T) {
 		if l.Error != nil || l.LineID != want[i] {
 			t.Errorf("line %d = %+v, want %s", i, l, want[i])
 		}
+	}
+}
+
+// rerDReports serves RER D's line reports recorded at 10:13 on a strike day,
+// while the Corbeil-Essonnes <> Malesherbes works were in force.
+func rerDReports(t *testing.T) *env {
+	t.Helper()
+	e := newEnv(t, at(t, "20261118T1013"))
+	e.fake.handle(navitia+"lines/line:IDFM:C01728", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, `{"lines": [{"id": "line:IDFM:C01728", "code": "D", "name": "D",
+			"commercial_mode": {"id": "commercial_mode:RapidTransit", "name": "RER"}, "network": {"name": "RER"}}]}`)
+	})
+	e.fake.file(t, navitia+"line_reports/lines/line:IDFM:C01728/line_reports", "20261118T1013-line-reports-rer-d.json")
+	return e
+}
+
+func titles(reports []transit.Report) []string {
+	var out []string
+	for _, r := range reports {
+		out = append(out, r.Title)
+	}
+	return out
+}
+
+func TestLineStatusLeavesBrokenLiftsOut(t *testing.T) {
+	t.Parallel()
+	e := rerDReports(t)
+
+	out, err := e.svc.LineStatus(t.Context(), transit.StatusInput{Lines: []string{"line:IDFM:C01728"}, Days: 30})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The recording holds 130 lift faults, tagged Ascenseur, beside the works.
+	l := out.Lines[0]
+	for _, title := range append(titles(l.Active), titles(l.Upcoming)...) {
+		if strings.Contains(title, "ascenseur") {
+			t.Errorf("line_status lists the lift fault %q", title)
+		}
+	}
+	if len(l.Active) == 0 || len(l.Upcoming) == 0 {
+		t.Errorf(
+			"active %v, upcoming %v: want the works and strike of the recording",
+			titles(l.Active),
+			titles(l.Upcoming),
+		)
+	}
+}
+
+func TestLineStatusSortsWorksInForceAndComing(t *testing.T) {
+	t.Parallel()
+	e := rerDReports(t)
+
+	out, err := e.svc.LineStatus(t.Context(), transit.StatusInput{Lines: []string{"line:IDFM:C01728"}, Days: 7})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	l := out.Lines[0]
+	const malesherbes = "RER D : Corbeil-Essonnes <> Malesherbes interrompu 16-20/11."
+	var works *transit.Report
+	for i := range l.Active {
+		if l.Active[i].Title == malesherbes {
+			works = &l.Active[i]
+		}
+	}
+	if works == nil {
+		t.Fatalf("active %v, want the Malesherbes works, in force 10:10-14:20", titles(l.Active))
+	}
+	// In force now, then the 19th and the 20th; the 16th and 17th are over.
+	want := []transit.Period{
+		{From: "2026-11-18T10:10:00+01:00", Until: "2026-11-18T14:20:00+01:00"},
+		{From: "2026-11-19T10:10:00+01:00", Until: "2026-11-19T14:20:00+01:00"},
+		{From: "2026-11-20T10:10:00+01:00", Until: "2026-11-20T14:20:00+01:00"},
+	}
+	if diff := cmp.Diff(want, works.Periods); diff != "" {
+		t.Errorf("Malesherbes periods (-want +got):\n%s", diff)
+	}
+	upcoming := titles(l.Upcoming)
+	for _, w := range []string{
+		"RER D : Châtelet Les H. <-> Villeneuve St-G le 21/11, dès 23h20", // in 3 days
+		"RER D - Stade de France - Match Rugby 21/11.",
+	} {
+		if !slices.Contains(upcoming, w) {
+			t.Errorf("upcoming %v, want %q", upcoming, w)
+		}
+	}
+	for _, w := range []string{
+		malesherbes, // in force: active only
+		"RER D : Stade de France <> Creil interruption 28-29/11.", // in 10 days
+	} {
+		if slices.Contains(upcoming, w) {
+			t.Errorf("upcoming %v holds %q", upcoming, w)
+		}
+	}
+	for _, r := range append(slices.Clone(l.Active), l.Upcoming...) {
+		if len(r.Periods) > 5 {
+			t.Errorf("%q lists %d periods, want at most 5", r.Title, len(r.Periods))
+		}
+	}
+}
+
+func TestLineStatusDaysBoundTheUpcomingWorks(t *testing.T) {
+	t.Parallel()
+	e := rerDReports(t)
+
+	out, err := e.svc.LineStatus(t.Context(), transit.StatusInput{Lines: []string{"line:IDFM:C01728"}, Days: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The match on the 21st at 16:00 is 3 days and 6 hours away.
+	if upcoming := titles(
+		out.Lines[0].Upcoming,
+	); slices.Contains(
+		upcoming,
+		"RER D - Stade de France - Match Rugby 21/11.",
+	) {
+		t.Errorf("upcoming %v holds the match, beyond 3 days", upcoming)
 	}
 }
