@@ -3,6 +3,7 @@ package transit_test
 import (
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/tio-plato/paris-transit-mcp/internal/transit"
@@ -69,6 +70,29 @@ func TestWalkOnlyAfterSnappingIsNoTransitRoute(t *testing.T) {
 	}
 	if len(out.Journeys) != 0 {
 		t.Errorf("returned the walk %+v as an answer", out.Journeys)
+	}
+	// The message names the place the user asked for, and the station tried.
+	if m := out.Error.Message; !strings.Contains(m, forum) || !strings.Contains(m, "Châtelet - Les Halles") {
+		t.Errorf("message %q, want the asked %s and the station tried", m, forum)
+	}
+}
+
+func TestNoTransitRouteBetweenStationsClaimsNoSnap(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, at(t, "20261118T0521"))
+	e.fake.places(t)
+	e.fake.file(t, navitia+"journeys", "20261118T0521-journey-forum-des-halles-la-defense.json")
+
+	out, err := e.svc.PlanJourney(t.Context(), plan("Gare du Nord", "La Défense"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if out.Error == nil || out.Error.Code != transit.CodeNoTransitRoute {
+		t.Fatalf("error = %+v, want no_transit_route", out.Error)
+	}
+	if strings.Contains(out.Error.Message, "nearest") {
+		t.Errorf("message %q mentions stations nearby, but both ends are stations", out.Error.Message)
 	}
 }
 

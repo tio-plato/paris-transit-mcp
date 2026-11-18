@@ -3,9 +3,11 @@ package transit
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"net/url"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -281,7 +283,8 @@ func (s *Service) journeys(ctx context.Context, q *journeyQuery) (*journeysRespo
 	if answers(resp) {
 		return resp, nil
 	}
-	snapped := false
+	asked := *q
+	var tried []string
 	for _, end := range []*place{&q.from, &q.to} {
 		if end.station() {
 			continue
@@ -291,11 +294,11 @@ func (s *Service) journeys(ctx context.Context, q *journeyQuery) (*journeysRespo
 			return nil, snapErr
 		}
 		if ok {
+			tried = append(tried, fmt.Sprintf("%s for %s", near.Name, end.Name))
 			*end = near
-			snapped = true
 		}
 	}
-	if snapped {
+	if len(tried) > 0 {
 		resp, err = s.queryJourneys(ctx, q)
 		if err != nil {
 			return nil, err
@@ -304,10 +307,12 @@ func (s *Service) journeys(ctx context.Context, q *journeyQuery) (*journeysRespo
 			return resp, nil
 		}
 	}
-	return nil, newError(CodeNoTransitRoute,
-		"no public transport route from %q to %q, even from the nearest stations within %d m: "+
-			"tell the user PRIM found no public transport for this trip",
-		q.from.Name, q.to.Name, snapDistance)
+	message := fmt.Sprintf("no public transport route from %q to %q", asked.from.Name, asked.to.Name)
+	if len(tried) > 0 {
+		message += ", even from the nearest station within " + strconv.Itoa(snapDistance) + " m (" +
+			strings.Join(tried, ", ") + ")"
+	}
+	return nil, newError(CodeNoTransitRoute, "%s: tell the user PRIM found no public transport for this trip", message)
 }
 
 // answers reports whether a response answers the trip: it has a public
