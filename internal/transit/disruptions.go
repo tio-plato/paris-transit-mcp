@@ -37,7 +37,7 @@ func (d *navDisruption) silent() bool {
 func (d *navDisruption) title() string {
 	for _, m := range d.Messages {
 		if slices.Contains(m.Channel.Types, "title") {
-			return plainText(m.Text)
+			return m.plainText()
 		}
 	}
 	return d.Severity.Name
@@ -48,12 +48,12 @@ func (d *navDisruption) title() string {
 func (d *navDisruption) text() string {
 	for _, m := range d.Messages {
 		if slices.Contains(m.Channel.Types, "web") {
-			return plainText(m.Text)
+			return m.plainText()
 		}
 	}
 	for _, m := range d.Messages {
 		if !slices.Contains(m.Channel.Types, "title") {
-			return plainText(m.Text)
+			return m.plainText()
 		}
 	}
 	return ""
@@ -77,16 +77,20 @@ func (d *navDisruption) stopAreas() []string {
 
 var (
 	lineBreakTags = regexp.MustCompile(`(?i)<\s*(br|/p|/li|/div)\s*/?>`)
-	tags          = regexp.MustCompile(`<[^>]*>`)
+	tags          = regexp.MustCompile(`</?[A-Za-z][^>]*>`)
 	blanks        = regexp.MustCompile(`[ \t\r\f\v\x{a0}]+`)
 	blankLines    = regexp.MustCompile(`\s*\n\s*`)
 )
 
-// plainText turns a message that may be HTML into plain text.
-func plainText(s string) string {
-	s = lineBreakTags.ReplaceAllString(s, "\n")
-	s = tags.ReplaceAllString(s, "")
-	s = html.UnescapeString(s)
+// plainText is the message as plain text. Only an HTML message loses its
+// tags: a plain text title such as "Châtelet <-> Mitry" keeps its arrow.
+func (m *navMessage) plainText() string {
+	s := m.Text
+	if m.Channel.ContentType == "text/html" {
+		s = lineBreakTags.ReplaceAllString(s, "\n")
+		s = tags.ReplaceAllString(s, "")
+		s = html.UnescapeString(s)
+	}
 	s = blanks.ReplaceAllString(s, " ")
 	s = blankLines.ReplaceAllString(s, "\n")
 	return strings.TrimSpace(s)

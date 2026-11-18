@@ -78,3 +78,35 @@ func TestAmbiguousLineNameListsCandidates(t *testing.T) {
 		t.Errorf("14: %+v, want metro 14 despite the ambiguous bus", out.Lines[1])
 	}
 }
+
+func TestDisruptionTitleKeepsItsArrowAndTextLosesItsHTML(t *testing.T) {
+	t.Parallel()
+	e := linesEnv(t)
+	// As PRIM writes them: a plain text title with <->, an HTML web message.
+	e.fake.handle(navitia+"line_reports/*", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, `{"line_reports": [], "disruptions": [{"id": "works", "status": "future",
+			"severity": {"name": "perturbée", "effect": "SIGNIFICANT_DELAYS"},
+			"application_periods": [{"begin": "20261121T030000", "end": "20261122T030000"}],
+			"messages": [
+				{"text": "RER B : Aulnay-sous-Bois <-> Mitry - Claye 21-22/11",
+				 "channel": {"content_type": "text/plain", "types": ["title"]}},
+				{"text": "<p>P&#233;riode : samedi.<br><br>Bus de remplacement</p>",
+				 "channel": {"content_type": "text/html", "types": ["web"]}}]}]}`)
+	})
+
+	out, err := e.svc.LineStatus(t.Context(), status("RER B"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(out.Lines) != 1 || len(out.Lines[0].Upcoming) != 1 {
+		t.Fatalf("lines %+v, want one upcoming disruption", out.Lines)
+	}
+	r := out.Lines[0].Upcoming[0]
+	if r.Title != "RER B : Aulnay-sous-Bois <-> Mitry - Claye 21-22/11" {
+		t.Errorf("title %q, want it as PRIM wrote it", r.Title)
+	}
+	if r.Text != "Période : samedi.\nBus de remplacement" {
+		t.Errorf("text %q, want the HTML as plain text", r.Text)
+	}
+}

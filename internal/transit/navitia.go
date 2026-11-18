@@ -140,6 +140,14 @@ type navPeriod struct {
 	End   string `json:"end"`
 }
 
+type navMessage struct {
+	Text    string `json:"text"`
+	Channel struct {
+		ContentType string   `json:"content_type"`
+		Types       []string `json:"types"`
+	} `json:"channel"`
+}
+
 type navDisruption struct {
 	ID       string   `json:"id"`
 	Status   string   `json:"status"`
@@ -148,14 +156,9 @@ type navDisruption struct {
 		Name   string `json:"name"`
 		Effect string `json:"effect"`
 	} `json:"severity"`
-	ApplicationPeriods []navPeriod `json:"application_periods"`
-	Messages           []struct {
-		Text    string `json:"text"`
-		Channel struct {
-			Types []string `json:"types"`
-		} `json:"channel"`
-	} `json:"messages"`
-	ImpactedObjects []struct {
+	ApplicationPeriods []navPeriod  `json:"application_periods"`
+	Messages           []navMessage `json:"messages"`
+	ImpactedObjects    []struct {
 		PtObject navPlace `json:"pt_object"`
 	} `json:"impacted_objects"`
 }
