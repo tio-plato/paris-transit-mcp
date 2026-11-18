@@ -282,3 +282,106 @@ func TestJourneyTimesAreParisTime(t *testing.T) {
 		t.Errorf("departure %q, leg departure %q, want 2026-11-18T05:35:00+01:00", j.Departure, j.Legs[0].Departure)
 	}
 }
+
+// gareDuNordNow serves Gare du Nord → Orly asked at 05:57: RER D train 153602
+// then metro 14, or metro 4 then metro 14; and the SIRI of RER D and metro 4
+// at Gare du Nord recorded with it.
+func gareDuNordNow(t *testing.T, rerD string) *env {
+	t.Helper()
+	e := newEnv(t, at(t, "20261118T0557"))
+	e.fake.places(t)
+	e.fake.file(t, navitia+"journeys", "20261118T0557-journey-gare-du-nord-orly-now.json")
+	e.fake.byQuery(t, siri, "LineRef", map[string]string{
+		"STIF:Line::C01728:": rerD,
+		"STIF:Line::C01374:": "20261118T0557-siri-gare-du-nord-m4.json",
+	})
+	return e
+}
+
+func TestMetroFirstRideMatchesTrainsToTheSameTerminus(t *testing.T) {
+	t.Parallel()
+	e := gareDuNordNow(t, "20261118T0557-siri-gare-du-nord-rer-d.json")
+
+	out, err := e.svc.PlanJourney(t.Context(), plan("Gare du Nord", "Aéroport d'Orly"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(out.Journeys) != 2 || out.Journeys[1].Legs[0].Line != "4" {
+		t.Fatalf("journeys %+v, want RER D then metro 4", out.Journeys)
+	}
+	rt := out.Journeys[1].FirstLegRealtime
+	if rt == nil || rt.Match != "direction" {
+		t.Fatalf("metro 4: first_leg_realtime = %+v, want a match by direction", rt)
+	}
+	// The ride leaves at 06:00:30 towards Bagneux - Lucie Aubrac: the trains
+	// there from 05:58:30 on, none to Porte de Clignancourt.
+	want := []string{"2026-11-18T05:59:41+01:00", "2026-11-18T06:05:08+01:00", "2026-11-18T06:10:08+01:00"}
+	if len(rt.Next) != len(want) {
+		t.Fatalf("next = %+v, want %v", rt.Next, want)
+	}
+	for i, n := range rt.Next {
+		if n.Time != want[i] {
+			t.Errorf("next[%d] = %+v, want %s", i, n, want[i])
+		}
+	}
+}
+
+func TestJourneyWhoseFirstTrainIsCancelledGoesLast(t *testing.T) {
+	t.Parallel()
+	// In this copy train 153602, the RER D of the first journey, is cancelled.
+	e := gareDuNordNow(t, "20261118T0557-siri-gare-du-nord-rer-d-edited-cancelled.json")
+
+	out, err := e.svc.PlanJourney(t.Context(), plan("Gare du Nord", "Aéroport d'Orly"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(out.Journeys) != 2 {
+		t.Fatalf("journeys %+v, want two", out.Journeys)
+	}
+	if out.Journeys[0].Legs[0].Line != "4" || out.Journeys[1].Legs[0].Line != "D" {
+		t.Errorf("first rides %s then %s, want 4 then the cancelled D",
+			out.Journeys[0].Legs[0].Line, out.Journeys[1].Legs[0].Line)
+	}
+	if rt := out.Journeys[1].FirstLegRealtime; rt == nil || rt.Match != "trip" || rt.Status != "cancelled" {
+		t.Errorf("RER D first_leg_realtime = %+v, want train 153602 cancelled", rt)
+	}
+}
+
+func TestJourneyDisruptionsSortLiftsFromWorks(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, at(t, "20261118T0521"))
+	// The works as PRIM published them on the RER B line, untagged.
+	works := `{"id": "works", "status": "future",
+		"severity": {"name": "perturbée", "effect": "SIGNIFICANT_DELAYS"},
+		"application_periods": [{"begin": "20261121T030000", "end": "20261122T030000"}],
+		"messages": [{"text": "RER B : Aulnay-sous-Bois <-> Mitry - Claye 21-22/11",
+			"channel": {"content_type": "text/plain", "types": ["title"]}}],
+		"impacted_objects": [{"pt_object": {"id": "line:IDFM:C01743", "embedded_type": "line"}}]}`
+	journeys := journeysJSON(t, []handJourney{{kind: "best", transfers: 0, walking: 0, durationS: 1800, rides: []ride{
+		{
+			from:        gareDuNord,
+			to:          massy,
+			dep:         "20261121T083000",
+			code:        "B",
+			trip:        "",
+			disruptions: []string{"works", "lift"},
+		},
+	}}}, `[`+works+`,`+liftOutage("lift", gareDuNord)+`]`)
+	e.fake.handle(navitia+"journeys", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, 200, journeys) })
+
+	out, err := e.svc.PlanJourney(t.Context(), plan("48.8809,2.3556", "48.7250,2.2590"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	d := out.Journeys[0].Disruptions
+	if len(d.Equipment) != 1 || d.Equipment[0].Stop != gareDuNord || d.Equipment[0].Title != "Panne d'un ascenseur" {
+		t.Errorf("equipment %+v, want the lift at Gare du Nord", d.Equipment)
+	}
+	if len(d.Service) != 1 || d.Service[0].Title != "RER B : Aulnay-sous-Bois <-> Mitry - Claye 21-22/11" ||
+		len(d.Service[0].Lines) != 1 || d.Service[0].Lines[0] != "B" {
+		t.Errorf("service %+v, want the works on line B", d.Service)
+	}
+}

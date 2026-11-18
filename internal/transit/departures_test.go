@@ -225,3 +225,41 @@ func TestDeparturesOfALineNotAtTheStopIsNotFound(t *testing.T) {
 		t.Errorf("second line %+v, want J", out.Lines[1])
 	}
 }
+
+func TestDeparturesGroupByDirectionAndKeepCancelledTrains(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, at(t, "20261118T0557"))
+	e.fake.places(t)
+	e.fake.file(t, navitia+"stop_areas/"+gareDuNord+"/lines", "20261118T0557-lines-gare-du-nord.json")
+	e.fake.file(t, siri, "20261118T0557-siri-gare-du-nord-rer-d.json")
+	in := departures("Gare du Nord", "RER D")
+	in.Limit = 10
+
+	out, err := e.svc.NextDepartures(t.Context(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// RER D leaves Gare du Nord both ways: SIRI's Aller and Retour.
+	if len(out.Lines) != 2 {
+		t.Fatalf("lines %+v, want two directions", out.Lines)
+	}
+	cancelled := 0
+	for _, l := range out.Lines {
+		if l.LineID != "line:IDFM:C01728" || !l.Realtime || len(l.Next) == 0 || len(l.Next) > 10 {
+			t.Errorf("direction %q: %+v, want 1 to 10 live RER D departures", l.Direction, l)
+		}
+		for _, d := range l.Next {
+			if d.Destination == "" {
+				t.Errorf("departure %+v has no destination", d)
+			}
+			if d.Status != nil && *d.Status == "cancelled" {
+				cancelled++
+			}
+		}
+	}
+	// Train 126603 to Villiers-le-Bel, due at 06:13:30, is cancelled.
+	if cancelled == 0 {
+		t.Error("no cancelled departure, want train 126603 cancelled")
+	}
+}

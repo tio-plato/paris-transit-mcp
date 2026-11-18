@@ -34,3 +34,7 @@ Files with "edited" in their name are recorded responses changed by hand for a t
 - 20261118T0520-siri-gare-du-nord-rer-b-edited-trip-number.json: a copy of
   20261118T0520-siri-gare-du-nord-rer-b.json where train PLIC06 is renamed ZZZZ06, and train INCA07, which
   runs the other way to Mitry - Claye, leaves at 04:35 UTC instead of 04:36, the minute of PLIC06.
+
+- 20261118T0557-siri-gare-du-nord-rer-d-edited-cancelled.json: a copy of
+  20261118T0557-siri-gare-du-nord-rer-d.json where train 153602 is cancelled instead of on time. The other
+  cancelled trains in both files are as PRIM recorded them, on a strike day.
