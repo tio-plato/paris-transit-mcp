@@ -460,3 +460,26 @@ func TestEachBrokenLiftIsListedOnce(t *testing.T) {
 		t.Error("no broken lift listed")
 	}
 }
+
+func TestFailedRealtimeIsNotAskedAgainInTheSameCall(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, at(t, "20261118T0521"))
+	ride := []ride{{from: gareDuNord, to: chateletLH, dep: "20261118T060000", code: "B", trip: "", disruptions: nil}}
+	journeys := journeysJSON(t, []handJourney{
+		{kind: "best", transfers: 0, walking: 0, durationS: 600, rides: ride},
+		{kind: "comfort", transfers: 0, walking: 0, durationS: 700, rides: ride},
+		{kind: "rapid", transfers: 0, walking: 0, durationS: 800, rides: ride},
+	}, `[]`)
+	e.fake.handle(navitia+"journeys", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, 200, journeys) })
+	e.fake.status(siri, http.StatusServiceUnavailable)
+
+	_, err := e.svc.PlanJourney(t.Context(), plan("48.8809,2.3556", "48.8617,2.3470"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The three first rides leave Gare du Nord on RER B: one request, no retry.
+	if n := len(e.fake.requestsTo(siri)); n != 1 {
+		t.Errorf("sent %d SIRI requests, want 1", n)
+	}
+}

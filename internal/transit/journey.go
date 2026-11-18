@@ -133,7 +133,7 @@ func (s *Service) planJourney(ctx context.Context, in JourneyInput) (*JourneyOut
 	for i := range resp.Disruptions {
 		disruptions[resp.Disruptions[i].ID] = &resp.Disruptions[i]
 	}
-	rt := realtimeLookup{s: s, cache: map[string][]visit{}}
+	rt := realtimeLookup{s: s, cache: map[string]lookup{}}
 	type ranked struct {
 		journey   Journey
 		cancelled bool

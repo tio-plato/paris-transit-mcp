@@ -44,24 +44,32 @@ type NextTrain struct {
 	Status  string `json:"status"`
 }
 
-// realtimeLookup fetches SIRI once per stop and line within a call.
+// realtimeLookup asks SIRI once per stop and line within a call, whatever
+// the answer: a failure is not retried for the next journey.
 type realtimeLookup struct {
 	s     *Service
-	cache map[string][]visit
+	cache map[string]lookup
+}
+
+type lookup struct {
+	visits []visit
+	err    error
 }
 
 func (r *realtimeLookup) visits(ctx context.Context, stopRef, lineRef string) ([]visit, error) {
 	key := stopRef + " " + lineRef
-	if v, ok := r.cache[key]; ok {
-		return v, nil
+	if l, ok := r.cache[key]; ok {
+		return l.visits, l.err
 	}
+	var l lookup
 	sm, err := r.s.prim.StopMonitoring(ctx, stopRef, lineRef)
 	if err != nil {
-		return nil, err
+		l.err = err
+	} else {
+		l.visits = sm.Visits()
 	}
-	v := sm.Visits()
-	r.cache[key] = v
-	return v, nil
+	r.cache[key] = l
+	return l.visits, l.err
 }
 
 // firstLeg matches realtime data to the journey's first public transport
