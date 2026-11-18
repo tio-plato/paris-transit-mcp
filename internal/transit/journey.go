@@ -207,6 +207,9 @@ func (s *Service) journeyOptions(in JourneyInput) (journeyQuery, error) {
 	default:
 		return q, newError(CodeBadRequest, "profile %q is neither standard nor step_free", in.Profile)
 	}
+	if in.Datetime == "" && q.arrival {
+		return q, newError(CodeBadRequest, "datetime_represents arrival needs a datetime to arrive by")
+	}
 	if in.Datetime != "" {
 		t, err := s.parseTime("datetime", in.Datetime)
 		if err != nil {

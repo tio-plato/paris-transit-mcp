@@ -491,3 +491,19 @@ func TestFailedRealtimeIsNotAskedAgainInTheSameCall(t *testing.T) {
 		t.Errorf("sent %d SIRI requests, want 1", n)
 	}
 }
+
+func TestArrivalWithoutATimeIsRefused(t *testing.T) {
+	t.Parallel()
+	e := rerB(t, "")
+	in := plan("Gare du Nord", "Massy-Palaiseau")
+	in.DatetimeRepresents = "arrival"
+
+	_, err := e.svc.PlanJourney(t.Context(), in)
+
+	if err == nil || transit.AsToolError(err).Code != transit.CodeBadRequest {
+		t.Errorf("error = %v, want bad_request: arriving by now has left already", err)
+	}
+	if n := len(e.fake.requestsTo(navitia)); n != 0 {
+		t.Errorf("sent %d Navitia requests", n)
+	}
+}
