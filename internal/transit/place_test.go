@@ -196,3 +196,27 @@ func TestChosenAddressCandidateKeepsItsName(t *testing.T) {
 		t.Errorf("origin %+v, want the Montreuil address", o)
 	}
 }
+
+func TestCoordinatesComeBackAsAnIdThatNeedsNoLookup(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, at(t, "20261118T0520"))
+	e.fake.file(t, navitia+"journeys", "20261118T0520-journey-gare-du-nord-massy.json")
+
+	first, err := e.svc.PlanJourney(t.Context(), plan(forum, "48.7250,2.2590"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Passing the resolved id back is the same place, not the nearest address.
+	again, err := e.svc.PlanJourney(t.Context(), plan(first.Origin.Resolved.ID, "48.7250,2.2590"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if n := len(e.fake.requestsTo(navitia + "places")); n != 0 {
+		t.Errorf("sent %d place lookups for coordinates", n)
+	}
+	a, b := first.Origin.Resolved, again.Origin.Resolved
+	if a.Lat != b.Lat || a.Lon != b.Lon || b.Type != "coord" {
+		t.Errorf("origin %+v, then %+v from its id: want the same coordinates", a, b)
+	}
+}

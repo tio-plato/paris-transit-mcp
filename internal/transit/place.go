@@ -41,12 +41,16 @@ func (p *place) endpoint() *Endpoint {
 	return &Endpoint{Resolved: p.Resolved}
 }
 
-// coordPlace is a place given as coordinates.
+// coordPlace is a place given as coordinates. Its id is "lat,lon", which
+// comes back as the same coordinates; Navitia takes "lon;lat", the form of its
+// own address ids, which are looked up.
 func coordPlace(lat, lon float64, name string) place {
-	id := formatFloat(lon) + ";" + formatFloat(lat)
 	return place{
-		Resolved: Resolved{ID: id, Name: name, Type: "coord", Lat: lat, Lon: lon, SnappedFrom: nil},
-		navitia:  id,
+		Resolved: Resolved{
+			ID: formatFloat(lat) + "," + formatFloat(lon), Name: name, Type: "coord", Lat: lat, Lon: lon,
+			SnappedFrom: nil,
+		},
+		navitia: formatFloat(lon) + ";" + formatFloat(lat),
 	}
 }
 
