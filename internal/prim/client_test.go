@@ -108,8 +108,9 @@ func TestConcurrentRequestsArePacedByTheRate(t *testing.T) {
 		_, _ = io.WriteString(w, `{}`)
 	}))
 	t.Cleanup(srv.Close)
-	const rate, n = 20, 6
-	c := prim.New(prim.Config{BaseURL: srv.URL, Token: testToken, Timeout: 0, Rate: rate})
+	// PRIM allows 5 requests a second per API; Rate 0 is the production rate.
+	const primLimit, n = 5, 4
+	c := prim.New(prim.Config{BaseURL: srv.URL, Token: testToken, Timeout: 0, Rate: 0})
 
 	var wg sync.WaitGroup
 	for range n {
@@ -118,10 +119,10 @@ func TestConcurrentRequestsArePacedByTheRate(t *testing.T) {
 	wg.Wait()
 
 	slices.SortFunc(arrivals, func(a, b time.Time) int { return a.Compare(b) })
-	// n requests at rate a second span at least n-1 intervals, whatever their
-	// concurrency; a small margin absorbs the scheduler.
-	minSpan := time.Duration(n-1) * time.Second / rate * 9 / 10
+	// Below PRIM's limit, n requests span more than n-1 of its intervals,
+	// whatever their concurrency.
+	minSpan := time.Duration(n-1) * time.Second / primLimit
 	if span := arrivals[n-1].Sub(arrivals[0]); span < minSpan {
-		t.Errorf("%d concurrent requests arrived within %v, want at least %v at %d a second", n, span, minSpan, rate)
+		t.Errorf("%d concurrent requests arrived within %v, faster than PRIM's %d a second", n, span, primLimit)
 	}
 }

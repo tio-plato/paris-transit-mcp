@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/tio-plato/paris-transit-mcp/internal/transit"
 )
 
@@ -33,45 +35,42 @@ func rankEnv(t *testing.T, journeys map[string]string) *env {
 	return e
 }
 
-func TestRankSortsByDurationThenTransfers(t *testing.T) {
+func TestRankSortsByDurationThenTransfersThenWalking(t *testing.T) {
 	t.Parallel()
 	e := newEnv(t, at(t, "20261118T0521"))
-	ride := func(to string) []ride {
-		return []ride{{from: gareDuNord, to: to, dep: "20261119T083000", code: "B", trip: "", disruptions: nil}}
+	journey := func(transfers, walkingS, durationS int) string {
+		return journeysJSON(
+			t,
+			[]handJourney{
+				{
+					kind:      "best",
+					transfers: transfers,
+					walking:   walkingS,
+					durationS: durationS,
+					rides: []ride{
+						{from: gareDuNord, to: orly, dep: "20261119T083000", code: "B", trip: "", disruptions: nil},
+					},
+				},
+			},
+			`[]`,
+		)
 	}
 	bodies := map[string]string{
-		// 40 minutes; 30 minutes with 2 transfers; 30 minutes with 1 transfer.
-		"48.1,2.1": journeysJSON(
-			t,
-			[]handJourney{{kind: "best", transfers: 0, walking: 60, durationS: 2400, rides: ride(orly)}},
-			`[]`,
-		),
-		"48.2,2.2": journeysJSON(
-			t,
-			[]handJourney{{kind: "best", transfers: 2, walking: 60, durationS: 1800, rides: ride(massy)}},
-			`[]`,
-		),
-		"48.3,2.3": journeysJSON(
-			t,
-			[]handJourney{{kind: "best", transfers: 1, walking: 60, durationS: 1800, rides: ride(laDefense)}},
-			`[]`,
-		),
+		"48.1,2.1": journey(0, 60, 2400),  // 40 minutes
+		"48.2,2.2": journey(2, 60, 1800),  // 30 minutes, 2 transfers
+		"48.3,2.3": journey(1, 60, 1800),  // 30 minutes, 1 transfer, 1 minute's walk
+		"48.4,2.4": journey(1, 300, 1800), // the same with 5 minutes' walk
 	}
 	e.fake.handle(navitia+"journeys", func(w http.ResponseWriter, r *http.Request) {
-		to := r.URL.Query().Get("to")
-		lon, lat, _ := strings.Cut(to, ";")
+		lon, lat, _ := strings.Cut(r.URL.Query().Get("to"), ";")
 		writeJSON(w, http.StatusOK, bodies[lat+","+lon])
 	})
 
 	out, err := e.svc.RankDestinations(t.Context(), transit.RankInput{
 		Origin: "48.8809,2.3556",
 		Destinations: []transit.DestinationInput{
-			destination(
-				"forty",
-				"48.1,2.1",
-			),
-			destination("two transfers", "48.2,2.2"),
-			destination("one transfer", "48.3,2.3"),
+			destination("forty", "48.1,2.1"), destination("two transfers", "48.2,2.2"),
+			destination("one transfer, long walk", "48.4,2.4"), destination("one transfer", "48.3,2.3"),
 		},
 		DepartAt: "",
 	})
@@ -83,8 +82,9 @@ func TestRankSortsByDurationThenTransfers(t *testing.T) {
 	for _, r := range out.Ranked {
 		labels = append(labels, r.Label)
 	}
-	if len(labels) != 3 || labels[0] != "one transfer" || labels[1] != "two transfers" || labels[2] != "forty" {
-		t.Errorf("ranked %v, want one transfer, two transfers, forty", labels)
+	want := []string{"one transfer", "one transfer, long walk", "two transfers", "forty"}
+	if diff := cmp.Diff(want, labels); diff != "" {
+		t.Errorf("ranked (-want +got):\n%s", diff)
 	}
 	for _, r := range e.fake.requestsTo(navitia + "journeys") {
 		if r.Query.Get("max_nb_journeys") != "1" {

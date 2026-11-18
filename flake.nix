@@ -20,7 +20,7 @@
           pname = "paris-transit-mcp";
           version = self.shortRev or self.dirtyShortRev or "dirty";
           src = self;
-          vendorHash = "sha256-NbuvbsmNbz3aKdjyyfpkbi52yRhXl473j3LvAUDn3L8=";
+          vendorHash = "sha256-+A01o/aeFALXmV2UxDIfLZG2W3vQ7E4e0kkHkp+ZFIY=";
           ldflags = [
             "-s"
             "-w"

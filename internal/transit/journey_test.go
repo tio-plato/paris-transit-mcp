@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/tio-plato/paris-transit-mcp/internal/transit"
 )
 
@@ -146,11 +148,8 @@ func TestTrainWithAnotherNumberIsNotMatchedByTimeAlone(t *testing.T) {
 	}
 
 	rt := out.Journeys[0].FirstLegRealtime
-	if rt == nil {
-		return
-	}
-	if rt.Match != "direction" {
-		t.Fatalf("first_leg_realtime = %+v, want no trip match", rt)
+	if rt == nil || rt.Match != "direction" {
+		t.Fatalf("first_leg_realtime = %+v, want no trip match but the trains to the same terminus", rt)
 	}
 	// The trains to Saint-Rémy-lès-Chevreuse from 05:33 on.
 	want := []string{"2026-11-18T05:35:02+01:00", "2026-11-18T05:53:00+01:00", "2026-11-18T06:08:00+01:00"}
@@ -556,5 +555,82 @@ func TestJourneyDisruptionGivesThePeriodOfTheJourney(t *testing.T) {
 	if len(service) != 1 || service[0].From != "2026-11-24T22:00:00+01:00" ||
 		service[0].Until != "2026-11-25T05:00:00+01:00" {
 		t.Errorf("service %+v, want the night of the journey, 24 to 25 November", service)
+	}
+}
+
+func TestDirectionMatchListsOnlyTrainsThatCanBeCaught(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, at(t, "20261118T0521"))
+	// The ride leaves at 05:40 Paris time, 04:40 UTC.
+	oneRide(t, e, "20261118T054000", "", []siriVisit{
+		{"", "Terminus", "", "2026-11-18T04:35:00Z", "onTime"}, // gone 5 minutes before the ride
+		{"", "Terminus", "", "2026-11-18T04:39:00Z", "onTime"}, // a minute early: still caught
+		{"", "Elsewhere", "", "2026-11-18T04:40:00Z", "onTime"},
+		{"", "Terminus", "", "2026-11-18T04:44:00Z", "delayed"},
+		{"", "Terminus", "", "2026-11-18T04:49:00Z", "onTime"},
+		{"", "Terminus", "", "2026-11-18T04:54:00Z", "onTime"},
+	})
+
+	out, err := e.svc.PlanJourney(t.Context(), plan("48.8809,2.3556", "48.7250,2.2590"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rt := out.Journeys[0].FirstLegRealtime
+	if rt == nil || rt.Match != "direction" {
+		t.Fatalf("first_leg_realtime = %+v, want a match by direction", rt)
+	}
+	var times []string
+	for _, n := range rt.Next {
+		times = append(times, n.Time)
+	}
+	want := []string{"2026-11-18T05:39:00+01:00", "2026-11-18T05:44:00+01:00", "2026-11-18T05:49:00+01:00"}
+	if diff := cmp.Diff(want, times); diff != "" {
+		t.Errorf("next trains (-want +got):\n%s", diff)
+	}
+}
+
+func TestTrainNumberAtAnotherTimeIsNotTheTrain(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, at(t, "20261118T0521"))
+	// Train KFAR02 runs every day; the ride is the 05:40 one, SIRI has 06:10.
+	oneRide(t, e, "20261118T054000", "KFAR02", []siriVisit{
+		{"KFAR02", "Terminus", "2026-11-18T05:10:00Z", "2026-11-18T05:12:00Z", "delayed"},
+	})
+
+	out, err := e.svc.PlanJourney(t.Context(), plan("48.8809,2.3556", "48.7250,2.2590"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if rt := out.Journeys[0].FirstLegRealtime; rt != nil && rt.Match == "trip" {
+		t.Errorf("first_leg_realtime = %+v: matched the 06:10 train to the 05:40 ride", rt)
+	}
+}
+
+func TestLiftsAreListedOnlyWhereTheJourneyBoardsChangesOrAlights(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, at(t, "20261118T0521"))
+	// The ride passes Châtelet - Les Halles without stopping there for the user.
+	journeys := journeysJSON(t, []handJourney{{kind: "best", transfers: 0, walking: 0, durationS: 1800, rides: []ride{
+		{
+			from:        gareDuNord,
+			to:          massy,
+			dep:         "20261119T083000",
+			code:        "B",
+			trip:        "",
+			disruptions: []string{"passed", "board"},
+		},
+	}}}, `[`+liftOutage("passed", chateletLH)+`,`+liftOutage("board", gareDuNord)+`]`)
+	e.fake.handle(navitia+"journeys", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, 200, journeys) })
+
+	out, err := e.svc.PlanJourney(t.Context(), plan("48.8809,2.3556", "48.7250,2.2590"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	equipment := out.Journeys[0].Disruptions.Equipment
+	if len(equipment) != 1 || equipment[0].Stop != gareDuNord {
+		t.Errorf("equipment %+v, want only the lift at Gare du Nord, where the journey boards", equipment)
 	}
 }

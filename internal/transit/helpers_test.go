@@ -268,3 +268,48 @@ func liftOutage(id, stopArea string) string {
 		"messages": [{"text": "Panne d'un ascenseur", "channel": {"types": ["title"]}}],
 		"impacted_objects": [{"pt_object": {"id": "` + stopArea + `", "embedded_type": "stop_area"}}]}`
 }
+
+// siriVisit is a vehicle of a hand-written SIRI response; times are UTC.
+type siriVisit struct {
+	train, destination, aimed, expected, status string
+}
+
+// siriJSON writes a SIRI Lite stop-monitoring response in PRIM's shape.
+func siriJSON(t *testing.T, visits []siriVisit) string {
+	t.Helper()
+	type obj = map[string]any
+	var vs []obj
+	for _, v := range visits {
+		call := obj{"ExpectedDepartureTime": v.expected, "DepartureStatus": v.status}
+		if v.aimed != "" {
+			call["AimedDepartureTime"] = v.aimed
+		}
+		vs = append(vs, obj{"MonitoredVehicleJourney": obj{
+			"LineRef":            obj{"value": "STIF:Line::C01743:"},
+			"DirectionRef":       obj{"value": "Aller"},
+			"DestinationName":    []obj{{"value": v.destination}},
+			"VehicleJourneyName": []obj{{"value": v.train}},
+			"TrainNumbers":       obj{"TrainNumberRef": []obj{{"value": v.train}}},
+			"MonitoredCall":      call,
+		}})
+	}
+	data, err := json.Marshal(obj{"Siri": obj{"ServiceDelivery": obj{
+		"StopMonitoringDelivery": []obj{{"MonitoredStopVisit": vs}},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+// oneRide serves a journey whose only ride leaves Gare du Nord on RER B
+// towards "Terminus" at dep, train trip, and the SIRI visits.
+func oneRide(t *testing.T, e *env, dep, trip string, visits []siriVisit) {
+	t.Helper()
+	journeys := journeysJSON(t, []handJourney{{kind: "best", transfers: 0, walking: 0, durationS: 1200, rides: []ride{
+		{from: gareDuNord, to: massy, dep: dep, code: "B", trip: trip, disruptions: nil},
+	}}}, `[]`)
+	e.fake.handle(navitia+"journeys", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, 200, journeys) })
+	body := siriJSON(t, visits)
+	e.fake.handle(siri, func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, 200, body) })
+}

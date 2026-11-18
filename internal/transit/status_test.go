@@ -42,6 +42,9 @@ func TestLineNamesResolveToRailWhenOnlyOneIsRail(t *testing.T) {
 	// RER B is not RER Bus B, the replacement bus; bare 14 is metro 14, not
 	// Vallée Sud Grand Paris bus 14; bare B is RER B.
 	want := []string{"line:IDFM:C01743", "line:IDFM:C01384", "line:IDFM:C01743"}
+	if len(out.Lines) != len(want) {
+		t.Fatalf("lines %+v, want %d", out.Lines, len(want))
+	}
 	for i, l := range out.Lines {
 		if l.Error != nil || l.LineID != want[i] {
 			t.Errorf("line %d = %+v, want %s", i, l, want[i])
