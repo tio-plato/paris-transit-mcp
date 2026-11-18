@@ -107,30 +107,10 @@ func (s *Service) PlanJourney(ctx context.Context, in JourneyInput) (*JourneyOut
 }
 
 func (s *Service) planJourney(ctx context.Context, in JourneyInput) (*JourneyOutput, error) {
-	q := journeyQuery{from: place{}, to: place{}, when: s.now(), arrival: false, stepFree: false, max: 0}
-	switch in.DatetimeRepresents {
-	case "", representsDeparture:
-	case representsArrival:
-		q.arrival = true
-	default:
-		return nil, newError(CodeBadRequest, "datetime_represents %q is neither departure nor arrival",
-			in.DatetimeRepresents)
+	q, err := s.journeyOptions(in)
+	if err != nil {
+		return nil, err
 	}
-	switch in.Profile {
-	case "", profileStandard:
-	case profileStepFree:
-		q.stepFree = true
-	default:
-		return nil, newError(CodeBadRequest, "profile %q is neither standard nor step_free", in.Profile)
-	}
-	if in.Datetime != "" {
-		t, err := s.parseTime("datetime", in.Datetime)
-		if err != nil {
-			return nil, err
-		}
-		q.when = t
-	}
-	var err error
 	q.from, err = s.resolvePlace(ctx, "origin", in.Origin)
 	if err != nil {
 		return nil, err
@@ -204,6 +184,34 @@ func (s *Service) planJourney(ctx context.Context, in JourneyInput) (*JourneyOut
 		out.Journeys = append(out.Journeys, r.journey)
 	}
 	return out, nil
+}
+
+// journeyOptions reads the time, its meaning and the profile of a journey.
+func (s *Service) journeyOptions(in JourneyInput) (journeyQuery, error) {
+	q := journeyQuery{from: place{}, to: place{}, when: s.now(), arrival: false, stepFree: false, max: 0}
+	switch in.DatetimeRepresents {
+	case "", representsDeparture:
+	case representsArrival:
+		q.arrival = true
+	default:
+		return q, newError(CodeBadRequest, "datetime_represents %q is neither departure nor arrival",
+			in.DatetimeRepresents)
+	}
+	switch in.Profile {
+	case "", profileStandard:
+	case profileStepFree:
+		q.stepFree = true
+	default:
+		return q, newError(CodeBadRequest, "profile %q is neither standard nor step_free", in.Profile)
+	}
+	if in.Datetime != "" {
+		t, err := s.parseTime("datetime", in.Datetime)
+		if err != nil {
+			return q, err
+		}
+		q.when = t
+	}
+	return q, nil
 }
 
 // compareBool orders false before true.
