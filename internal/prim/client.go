@@ -1,5 +1,4 @@
-// Package prim is a client for Île-de-France Mobilités' PRIM APIs: the Navitia
-// journey planner and the SIRI Lite stop monitoring.
+// Package prim is a client for the PRIM APIs: Navitia and SIRI Lite.
 package prim
 
 import (
@@ -17,20 +16,17 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// DefaultBaseURL is PRIM's marketplace root.
 const DefaultBaseURL = "https://prim.iledefrance-mobilites.fr/marketplace"
 
-// KeyVariable is the environment variable that holds the PRIM token.
 const KeyVariable = "PRIM_API_KEY"
 
 const (
-	// RequestsPerSecond stays below PRIM's limit of 5 requests a second per API.
+	// RequestsPerSecond stays under PRIM's limit of 5 per API.
 	RequestsPerSecond = 4
 	defaultTimeout    = 20 * time.Second
 	maxBody           = 16 << 20
 )
 
-// Error codes the client returns.
 const (
 	CodeAuth       = "auth"
 	CodeQuota      = "quota"
@@ -39,29 +35,23 @@ const (
 	CodeNotFound   = "not_found"
 )
 
-// Error is a failed PRIM request. Its message never holds the token.
+// Error is a failed request. Its message never contains the token.
 type Error struct {
 	Code    string
 	Message string
-	// NavitiaID is the id of the error object in a Navitia error body, such as
-	// no_solution, when there is one.
+	// NavitiaID is the error id from Navitia's body, e.g. no_solution.
 	NavitiaID string
 }
 
 func (e *Error) Error() string { return e.Message }
 
-// Config configures a [Client].
 type Config struct {
 	BaseURL string
 	Token   string
-	// Timeout bounds each request; zero means 20 seconds.
 	Timeout time.Duration
-	// Rate is the number of requests a second per API family; zero means
-	// [RequestsPerSecond].
-	Rate float64
+	Rate    float64
 }
 
-// Client sends requests to PRIM. It is safe for concurrent use.
 type Client struct {
 	base    string
 	token   string
@@ -70,16 +60,13 @@ type Client struct {
 	siri    *rate.Limiter
 }
 
-// TokenFromEnv reads the PRIM token with getenv.
 func TokenFromEnv(getenv func(string) string) (string, error) {
 	token := strings.TrimSpace(getenv(KeyVariable))
 	if token == "" {
 		return "", fmt.Errorf("environment variable %s is not set", KeyVariable)
 	}
-	// An MCP client passes a ${VAR} reference as it is when VAR is unset in
-	// its own environment.
-	// The value is not repeated: a fallback written in the reference may be
-	// the token itself.
+	// Clients pass ${VAR} through when VAR is unset. Don't echo it: a
+	// ${VAR:-fallback} may hold the token.
 	if strings.HasPrefix(token, "${") {
 		return "", fmt.Errorf("environment variable %s holds an unexpanded ${…} reference: "+
 			"set the variable in the environment of the MCP client", KeyVariable)
@@ -87,7 +74,6 @@ func TokenFromEnv(getenv func(string) string) (string, error) {
 	return token, nil
 }
 
-// New returns a client.
 func New(cfg Config) *Client {
 	timeout := cfg.Timeout
 	if timeout == 0 {
@@ -106,18 +92,15 @@ func New(cfg Config) *Client {
 				return http.ErrUseLastResponse
 			},
 		},
-		// A burst of one spaces requests evenly, so no second ever holds more
-		// than the rate.
+		// Burst 1, so no one-second window exceeds the rate.
 		navitia: rate.NewLimiter(rate.Limit(perSecond), 1),
 		siri:    rate.NewLimiter(rate.Limit(perSecond), 1),
 	}
 }
 
-// navitiaPath matches the path segments the client builds: ids and
-// coordinates, never a dot-dot or a query.
+// navitiaPath allows ids and coordinates, nothing like ".." or "?".
 var navitiaPath = regexp.MustCompile(`^[A-Za-z0-9_]+(/[A-Za-z0-9:;._-]+)*$`)
 
-// Navitia sends GET /v2/navitia/<path> with query and decodes the JSON body into out.
 func (c *Client) Navitia(ctx context.Context, path string, query url.Values, out any) error {
 	if !navitiaPath.MatchString(path) || strings.Contains(path, "..") {
 		return &Error{Code: CodeBadRequest, Message: fmt.Sprintf("invalid Navitia path %q", path)}
@@ -125,7 +108,6 @@ func (c *Client) Navitia(ctx context.Context, path string, query url.Values, out
 	return c.get(ctx, c.navitia, "/v2/navitia/"+path, query, out)
 }
 
-// StopMonitoring sends a SIRI Lite stop-monitoring request for one stop and one line.
 func (c *Client) StopMonitoring(ctx context.Context, monitoringRef, lineRef string) (*StopMonitoring, error) {
 	query := url.Values{"MonitoringRef": {monitoringRef}}
 	if lineRef != "" {
@@ -152,13 +134,11 @@ func (c *Client) get(ctx context.Context, limiter *rate.Limiter, path string, qu
 	if err != nil {
 		return &Error{Code: CodeBadRequest, Message: fmt.Sprintf("build the request for %s: %v", path, err)}
 	}
-	// PRIM documents the header as apiKey: it is set as written, not in
-	// the canonical form Header.Set would give it.
+	// Set directly: PRIM documents "apiKey", Header.Set would send "Apikey".
 	req.Header["apiKey"] = []string{c.token}
 	req.Header.Set("Accept", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		// The error names the URL, which holds no token: the token is a header.
 		return &Error{Code: CodeUpstream, Message: fmt.Sprintf("reach PRIM for %s: %v", path, unwrapURLError(err))}
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -176,7 +156,7 @@ func (c *Client) get(ctx context.Context, limiter *rate.Limiter, path string, qu
 	return nil
 }
 
-// unwrapURLError drops the [url.Error] wrapper, whose text repeats the URL.
+// unwrapURLError drops [url.Error], which repeats the URL.
 func unwrapURLError(err error) error {
 	var uerr *url.Error
 	if errors.As(err, &uerr) {
@@ -188,7 +168,6 @@ func unwrapURLError(err error) error {
 	return err
 }
 
-// navitiaError is the body Navitia sends with a 4xx status.
 type navitiaError struct {
 	Error struct {
 		ID      string `json:"id"`
@@ -231,8 +210,7 @@ var (
 	lineID     = regexp.MustCompile(`^line:IDFM:([A-Za-z0-9]+)$`)
 )
 
-// SIRIStopRef turns a Navitia stop area id (stop_area:IDFM:71264) into a SIRI
-// MonitoringRef (STIF:StopArea:SP:71264:).
+// SIRIStopRef maps stop_area:IDFM:71264 to STIF:StopArea:SP:71264:.
 func SIRIStopRef(stopArea string) (string, bool) {
 	m := stopAreaID.FindStringSubmatch(stopArea)
 	if m == nil {
@@ -241,8 +219,7 @@ func SIRIStopRef(stopArea string) (string, bool) {
 	return "STIF:StopArea:SP:" + m[1] + ":", true
 }
 
-// SIRILineRef turns a Navitia line id (line:IDFM:C01739) into a SIRI LineRef
-// (STIF:Line::C01739:).
+// SIRILineRef maps line:IDFM:C01739 to STIF:Line::C01739:.
 func SIRILineRef(line string) (string, bool) {
 	m := lineID.FindStringSubmatch(line)
 	if m == nil {

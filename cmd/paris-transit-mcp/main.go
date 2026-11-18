@@ -1,5 +1,4 @@
-// Command paris-transit-mcp is a read-only MCP server for Île-de-France public
-// transport on Île-de-France Mobilités' PRIM data, over stdio.
+// Command paris-transit-mcp is an MCP server for Paris public transport.
 package main
 
 import (
@@ -43,8 +42,7 @@ func run() error {
 		return err
 	}
 	err = server.Run(ctx, &mcp.StdioTransport{})
-	// SIGINT or SIGTERM is how a client stops the server: whatever the
-	// session returns then, closed pipes included, is no failure.
+	// A signal is how clients stop us; whatever Run returns then is fine.
 	if err != nil && ctx.Err() == nil {
 		return fmt.Errorf("serve MCP over stdio: %w", err)
 	}

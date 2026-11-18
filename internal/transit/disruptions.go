@@ -8,11 +8,8 @@ import (
 	"time"
 )
 
-// equipmentTag reports whether a Navitia tag marks an equipment fault, such
-// as a broken lift. PRIM publishes them as disruptions with the same severity
-// as a line fault, so the tag is what tells them apart. Tags seen in PRIM
-// responses on 2026-11-18: Ascenseur (equipment) and Actualité (news, a
-// service message).
+// equipmentTag: PRIM gives broken lifts the same severity as line faults, so
+// only the tag tells them apart. Seen so far: Ascenseur, and Actualité (news).
 func equipmentTag(tag string) bool {
 	switch tag {
 	case "Ascenseur":
@@ -22,18 +19,15 @@ func equipmentTag(tag string) bool {
 	}
 }
 
-// equipment reports whether a disruption is an equipment fault.
 func (d *navDisruption) equipment() bool {
 	return slices.ContainsFunc(d.Tags, equipmentTag)
 }
 
-// silent reports whether a disruption says nothing: a realtime feed's record
-// of a trip, with no message and an unknown effect.
+// silent: a realtime record of a trip, with nothing to say.
 func (d *navDisruption) silent() bool {
 	return len(d.Messages) == 0 && d.Severity.Effect == "UNKNOWN_EFFECT"
 }
 
-// title is the disruption's title message, else its severity.
 func (d *navDisruption) title() string {
 	for _, m := range d.Messages {
 		if slices.Contains(m.Channel.Types, "title") {
@@ -43,8 +37,6 @@ func (d *navDisruption) title() string {
 	return d.Severity.Name
 }
 
-// text is the disruption's web message, else its first message that is not
-// the title.
 func (d *navDisruption) text() string {
 	for _, m := range d.Messages {
 		if slices.Contains(m.Channel.Types, "web") {
@@ -59,7 +51,6 @@ func (d *navDisruption) text() string {
 	return ""
 }
 
-// stopAreas are the ids of the stop areas the disruption impacts.
 func (d *navDisruption) stopAreas() []string {
 	var out []string
 	for _, o := range d.ImpactedObjects {
@@ -82,8 +73,8 @@ var (
 	blankLines    = regexp.MustCompile(`\s*\n\s*`)
 )
 
-// plainText is the message as plain text. Only an HTML message loses its
-// tags: a plain text title such as "Châtelet <-> Mitry" keeps its arrow.
+// plainText strips tags from HTML messages only: titles like
+// "Châtelet <-> Mitry" are plain text.
 func (m *navMessage) plainText() string {
 	s := m.Text
 	if m.Channel.ContentType == "text/html" {
@@ -96,12 +87,10 @@ func (m *navMessage) plainText() string {
 	return strings.TrimSpace(s)
 }
 
-// period is an application period in Paris time.
 type period struct {
 	begin, end time.Time
 }
 
-// periods returns the disruption's readable periods, sorted by start.
 func (s *Service) periods(d *navDisruption) []period {
 	var out []period
 	for _, p := range d.ApplicationPeriods {
@@ -115,8 +104,7 @@ func (s *Service) periods(d *navDisruption) []period {
 	return out
 }
 
-// periodAt returns the period in force at t, else the next one; ok is false
-// when every period has ended by t.
+// periodAt returns the period in force at t, else the next one.
 func (s *Service) periodAt(d *navDisruption, t time.Time) (period, bool) {
 	for _, p := range s.periods(d) {
 		if p.end.After(t) {
@@ -126,13 +114,11 @@ func (s *Service) periodAt(d *navDisruption, t time.Time) (period, bool) {
 	return period{}, false
 }
 
-// Disruptions are the disruptions of a journey.
 type Disruptions struct {
 	Service   []ServiceDisruption   `json:"service"`
 	Equipment []EquipmentDisruption `json:"equipment"`
 }
 
-// ServiceDisruption is a disruption of the service: a fault, works, a strike.
 type ServiceDisruption struct {
 	Lines  []string `json:"lines"`
 	Status string   `json:"status"`
@@ -142,7 +128,6 @@ type ServiceDisruption struct {
 	Until  string   `json:"until"`
 }
 
-// EquipmentDisruption is an equipment fault, such as a broken lift, at a stop.
 type EquipmentDisruption struct {
 	Stop  string `json:"stop"`
 	Title string `json:"title"`
@@ -150,15 +135,13 @@ type EquipmentDisruption struct {
 	Until string `json:"until"`
 }
 
-// journeyDisruptions sorts the disruptions linked to a journey's sections into
-// service disruptions and equipment faults at the stops where the journey
-// boards, changes or alights.
+// journeyDisruptions keeps equipment faults only where the journey boards,
+// changes or alights.
 func (s *Service) journeyDisruptions(j *navJourney, all map[string]*navDisruption) Disruptions {
 	out := Disruptions{Service: []ServiceDisruption{}, Equipment: []EquipmentDisruption{}}
 	stops := boardingStops(j)
 	at, arrival := s.journeyWindow(j)
-	// PRIM republishes the same lift fault many times, each with its own end:
-	// it is listed once, until the latest end.
+	// PRIM republishes the same lift fault with different end dates.
 	type lift struct {
 		index int
 		end   time.Time
@@ -200,7 +183,6 @@ func (s *Service) journeyDisruptions(j *navJourney, all map[string]*navDisruptio
 	return out
 }
 
-// journeyWindow is the time of a journey, from its departure to its arrival.
 func (s *Service) journeyWindow(j *navJourney) (time.Time, time.Time) {
 	at, ok := s.parseNavitia(j.DepartureDateTime)
 	if !ok {
@@ -213,12 +195,9 @@ func (s *Service) journeyWindow(j *navJourney) (time.Time, time.Time) {
 	return at, arrival
 }
 
-// periodFor returns the period of d that bears on a journey from at to
-// arrival: in force at departure, else the next one. Periods are those of the
-// journey's time, not of now: works tonight say nothing of a trip next week,
-// nor works next week of a trip tonight. listed is false when d is over before
-// the journey or starts after it. A disruption without readable periods is
-// listed, without dates: dated is false.
+// periodFor picks the period relevant to the journey, not to now. listed is
+// false if d ends before the journey or starts after it; with no readable
+// period it's listed without dates.
 func (s *Service) periodFor(d *navDisruption, at, arrival time.Time) (period, bool, bool) {
 	if len(s.periods(d)) == 0 {
 		return period{}, false, true
@@ -230,8 +209,6 @@ func (s *Service) periodFor(d *navDisruption, at, arrival time.Time) (period, bo
 	return p, true, true
 }
 
-// boardingStops maps the stop areas where a journey boards, changes or
-// alights to their names, without the town.
 func boardingStops(j *navJourney) map[string]string {
 	stops := map[string]string{}
 	for _, sec := range j.publicTransport() {
@@ -244,7 +221,6 @@ func boardingStops(j *navJourney) map[string]string {
 	return stops
 }
 
-// firstStop is the first of the stops a disruption impacts that is in stops.
 func firstStop(d *navDisruption, stops map[string]string) (string, bool) {
 	for _, sa := range d.stopAreas() {
 		if name, ok := stops[sa]; ok {
@@ -254,15 +230,11 @@ func firstStop(d *navDisruption, stops map[string]string) (string, bool) {
 	return "", false
 }
 
-// linkedDisruption is a disruption linked to a journey, with the codes of the
-// lines whose sections link it.
 type linkedDisruption struct {
 	d     *navDisruption
 	lines []string
 }
 
-// linkedDisruptions are the disruptions the journey's public transport
-// sections link to, each once, in the order they first appear.
 func linkedDisruptions(j *navJourney, all map[string]*navDisruption) []*linkedDisruption {
 	var out []*linkedDisruption
 	byID := map[string]*linkedDisruption{}

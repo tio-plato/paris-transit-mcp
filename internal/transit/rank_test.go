@@ -15,7 +15,6 @@ func destination(label, place string) transit.DestinationInput {
 	return transit.DestinationInput{Label: label, Place: place, ArriveBy: ""}
 }
 
-// rankEnv answers each journeys request by its destination.
 func rankEnv(t *testing.T, journeys map[string]string) *env {
 	t.Helper()
 	e := newEnv(t, at(t, "20261118T0521"))
@@ -97,7 +96,7 @@ func TestRankPutsAFailedDestinationAside(t *testing.T) {
 	t.Parallel()
 	e := rankEnv(t, map[string]string{
 		massy: "20261118T0520-journey-gare-du-nord-massy.json",
-		// Walk only; both ends are stations, so there is nothing to snap.
+		// Walk only, and both ends are stations.
 		laDefense: "20261118T0521-journey-forum-des-halles-la-defense.json",
 	})
 
@@ -233,8 +232,7 @@ func TestRankKeepsTheOriginWhenADestinationCausedTheSnap(t *testing.T) {
 	walk := readFixture(t, "20261118T0521-journey-forum-des-halles-la-defense.json")
 	viaRERA := readFixture(t, "20261118T0521-journey-chatelet-la-defense.json")
 	e.fake.handle(navitia+"journeys", func(w http.ResponseWriter, r *http.Request) {
-		// The point inside the Forum des Halles, and the station near it, get
-		// only a walk; any other trip has public transport.
+		// The Forum point and its station only get a walk.
 		to := r.URL.Query().Get("to")
 		if to == forumCoord || to == chateletLH {
 			writeJSON(w, http.StatusOK, string(walk))

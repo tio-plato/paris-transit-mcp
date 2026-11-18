@@ -11,11 +11,10 @@ import (
 	"strings"
 )
 
-// maxLineMatches is how many lines a line search asks for: a number such as
-// 14 also matches 140 to 149 and more, which come before rarer exact matches.
+// maxLineMatches is large because "14" also matches 140–149, which can push
+// exact matches off a short page.
 const maxLineMatches = 100
 
-// Modes the server names lines by.
 const (
 	modeMetro      = "Metro"
 	modeRER        = "RER"
@@ -28,7 +27,6 @@ const (
 
 var noctilienCode = regexp.MustCompile(`^N\d+$`)
 
-// modeOf names the mode of a line from its Navitia commercial mode and code.
 func modeOf(commercialMode, commercialModeName, code string) string {
 	switch commercialMode {
 	case "commercial_mode:Metro":
@@ -47,7 +45,7 @@ func modeOf(commercialMode, commercialModeName, code string) string {
 		}
 		return modeBus
 	}
-	// Journey sections give the commercial mode by name only.
+	// Journey sections only give the name.
 	switch fold(commercialModeName) {
 	case "metro":
 		return modeMetro
@@ -68,7 +66,6 @@ func modeOf(commercialMode, commercialModeName, code string) string {
 	return commercialModeName
 }
 
-// rail reports whether a mode runs on rails: metro, RER, train or tram.
 func rail(mode string) bool {
 	switch mode {
 	case modeMetro, modeRER, modeTransilien, modeTER, modeTram:
@@ -78,14 +75,12 @@ func rail(mode string) bool {
 	}
 }
 
-// modeRank orders modes for next_departures: RER and trains, metro, tram,
-// others, bus, Noctilien.
 func modeRank(mode string) int {
 	order := [][]string{
 		{modeRER, modeTransilien, modeTER},
 		{modeMetro},
 		{modeTram},
-		nil, // any other mode
+		nil, // everything else
 		{modeBus},
 		{modeNoctilien},
 	}
@@ -101,7 +96,7 @@ func modeRank(mode string) int {
 	return other
 }
 
-// label is the short name of a line, such as M14, RER B, T3a or Bus 21.
+// label gives M14, RER B, T3a or Bus 21.
 func label(mode, code string) string {
 	switch mode {
 	case modeMetro:
@@ -113,7 +108,6 @@ func label(mode, code string) string {
 	}
 }
 
-// line is a resolved line.
 type line struct {
 	ID      string
 	Code    string
@@ -139,7 +133,6 @@ func (l *line) candidate() Candidate {
 	}
 }
 
-// lineQuery is a parsed line name: the mode it names, if any, and the code.
 type lineQuery struct {
 	modes []string
 	code  string
@@ -152,11 +145,10 @@ var (
 	tramShort     = regexp.MustCompile(`^t\d+[a-z]?$`)
 )
 
-// modeWord is a word that names a mode in a line name.
 type modeWord struct {
 	word  string
 	modes []string
-	// prefix is prepended to the code when it lacks it: "Tram 3a" is T3a.
+	// prefix: "Tram 3a" is T3a.
 	prefix string
 }
 
@@ -174,9 +166,8 @@ func modeWords() []modeWord {
 	}
 }
 
-// parseLineName reads a line name such as "M14", "Métro 14", "RER B", "T3a",
-// "Tram 3a", "Bus 21", "Transilien J", "Noctilien N14", or a bare code. A
-// "bis" line is coded B, as PRIM codes metro 3bis 3B.
+// parseLineName reads "M14", "Métro 14", "RER B", "T3a", "Bus 21", "J"…
+// PRIM codes metro 3bis as 3B.
 func parseLineName(name string) lineQuery {
 	q := parseLineWords(name)
 	q.code = bisCode.ReplaceAllString(q.code, "${1}b")
@@ -205,9 +196,8 @@ func parseLineWords(name string) lineQuery {
 	return lineQuery{modes: nil, code: v}
 }
 
-// match picks the line a query names among lines: exact code, within the
-// query's mode if it has one. Without a mode, one rail line among several
-// matches wins. It returns the matches when there is no single answer.
+// match returns the line, or all matches when there isn't exactly one.
+// Without a mode, a single rail line wins over buses.
 func (q lineQuery) match(lines []line) (line, []line) {
 	var matches []line
 	seen := map[string]bool{}
@@ -238,7 +228,6 @@ func (q lineQuery) match(lines []line) (line, []line) {
 	return line{}, matches
 }
 
-// lineError is the error for a line name that names no single line.
 func lineError(name string, matches []line) *ToolError {
 	if len(matches) == 0 {
 		return newError(CodeNotFound, "line %q: no such line", name)
@@ -255,7 +244,6 @@ func lineError(name string, matches []line) *ToolError {
 	}
 }
 
-// resolveLine resolves a line name or id across the whole network.
 func (s *Service) resolveLine(ctx context.Context, name string) (line, error) {
 	v := strings.TrimSpace(name)
 	if lineIDPattern.MatchString(v) {
@@ -301,8 +289,7 @@ func (s *Service) resolveLine(ctx context.Context, name string) (line, error) {
 
 var leadingNumber = regexp.MustCompile(`^[A-Za-z]?(\d+)`)
 
-// codeKey sorts line codes naturally: 2 before 10, T2 before T10, numbers
-// before letters.
+// codeKey sorts 2 before 10 and T2 before T10.
 func codeKey(code string) (int, string) {
 	m := leadingNumber.FindStringSubmatch(code)
 	if m == nil {

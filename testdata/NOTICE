@@ -1,42 +1,20 @@
-Test fixtures: responses of Île-de-France Mobilités' PRIM APIs
-================================================================
+These JSON files are PRIM responses (https://prim.iledefrance-mobilites.fr), recorded on 2026-11-18. File names
+start with the recording time (Paris), which the tests use as their clock. The queries are about stations and
+public places only; no request headers were kept.
 
-The .json files in this directory are response bodies of the PRIM platform of Île-de-France Mobilités
-(https://prim.iledefrance-mobilites.fr), recorded on 2026-11-18 for the tests. Each file name starts with the
-time of the recording, in Paris time; the tests set their clock to it.
+Source: Île-de-France Mobilités, PRIM. Not covered by the code's MIT license. Licences as stated on PRIM on
+2026-11-18:
 
-The queries name only stations and public places: Gare du Nord, Gare Saint-Lazare, Châtelet - Les Halles,
-La Défense, Massy - Palaiseau, Orly airport, a point inside the Forum des Halles (48.8619, 2.3470), and the
-public names "Victor Hugo" and "12 rue Victor Hugo", the Montreuil one of which is also looked up by its id,
-and the line reports of RER D.
-Only response bodies were kept, no request header.
-
-Source: Île-de-France Mobilités, PRIM. These data are not covered by the licence of the code. They are reused
-under the licences of the APIs they come from, as the PRIM pages of these APIs stated them on 2026-11-18:
-
-- Île-de-France Mobilités Calculator - Generic access (v2), the Navitia journey planner
-  (places, places_nearby, journeys, pt_objects, lines, departures):
+- Navitia, generic access (places, journeys, lines, departures…): Mobility License (Licence Mobilités).
   https://prim.iledefrance-mobilites.fr/en/apis/idfm-navitia-general-v2
-  Licence: Mobility License (Licence Mobilités).
-
-- Île-de-France Mobilités Calculator - Traffic Info Messages (v2) (line_reports):
+- Navitia, traffic info (line_reports): Mobility License.
   https://prim.iledefrance-mobilites.fr/en/apis/idfm-navitia-line_reports-v2
-  Licence: Mobility License (Licence Mobilités).
-
-- Next Departures (Île-de-France Mobilités platform) - unitary request (stop-monitoring, SIRI Lite):
+- SIRI Lite next departures (stop-monitoring): the page says Mobility License in one place and ODbL in another.
   https://prim.iledefrance-mobilites.fr/en/apis/idfm-ivtr-requete_unitaire
-  The page lists the Mobility License in its details, and its "API Terms of Use and Data License" section
-  says the data are under the Open Database License (ODbL).
 
-Hand-edited copies
-------------------
+Edited by hand:
 
-Files with "edited" in their name are recorded responses changed by hand for a test:
-
-- 20261118T0520-siri-gare-du-nord-rer-b-edited-trip-number.json: a copy of
-  20261118T0520-siri-gare-du-nord-rer-b.json where train PLIC06 is renamed ZZZZ06, and train INCA07, which
-  runs the other way to Mitry - Claye, leaves at 04:35 UTC instead of 04:36, the minute of PLIC06.
-
-- 20261118T0557-siri-gare-du-nord-rer-d-edited-cancelled.json: a copy of
-  20261118T0557-siri-gare-du-nord-rer-d.json where train 153602 is cancelled instead of on time. The other
-  cancelled trains in both files are as PRIM recorded them, on a strike day.
+- *-siri-gare-du-nord-rer-b-edited-trip-number.json: train PLIC06 renamed ZZZZ06, and INCA07 (other direction)
+  moved to 04:35 UTC, PLIC06's minute.
+- *-siri-gare-du-nord-rer-d-edited-cancelled.json: train 153602 cancelled. The other cancellations are real
+  (strike day).

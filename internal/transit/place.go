@@ -10,12 +10,9 @@ import (
 )
 
 const (
-	// ambiguityWindow is how many /places results are checked for homonymous addresses.
 	ambiguityWindow = 8
-	// snapDistance is how far, in metres, the server looks for a station near a place.
-	snapDistance = 500
-	// communeLevel is the administrative level of a French commune in Navitia.
-	communeLevel = 8
+	snapDistance    = 500
+	communeLevel    = 8
 )
 
 var (
@@ -24,15 +21,13 @@ var (
 	navitiaID = regexp.MustCompile(`^(stop_area|stop_point|address|poi|admin):[A-Za-z0-9:._-]+$`)
 )
 
-// place is a resolved place parameter.
 type place struct {
 	Resolved
 
-	// navitia is the place as Navitia takes it in from= and to=.
+	// navitia is the value for from= and to=.
 	navitia string
 }
 
-// station reports whether the place is a station, which needs no snapping.
 func (p *place) station() bool {
 	return p.Type == typeStopArea || p.Type == typeStopPoint
 }
@@ -41,9 +36,8 @@ func (p *place) endpoint() *Endpoint {
 	return &Endpoint{Resolved: p.Resolved}
 }
 
-// coordPlace is a place given as coordinates. Its id is "lat,lon", which
-// comes back as the same coordinates; Navitia takes "lon;lat", the form of its
-// own address ids, which are looked up.
+// coordPlace: the id is "lat,lon" so it round-trips. "lon;lat" is what
+// Navitia uses for addresses, and those get looked up.
 func coordPlace(lat, lon float64, name string) place {
 	return place{
 		Resolved: Resolved{
@@ -63,8 +57,6 @@ func parseFloat(s string) float64 {
 	return f
 }
 
-// resolvePlace resolves a place parameter: an id, "lat,lon" or text; name is
-// the parameter, for errors.
 func (s *Service) resolvePlace(ctx context.Context, name, value string) (place, error) {
 	v := strings.TrimSpace(value)
 	if v == "" {
@@ -78,8 +70,7 @@ func (s *Service) resolvePlace(ctx context.Context, name, value string) (place, 
 		return coordPlace(lat, lon, v), nil
 	}
 	if m := lonLatID.FindStringSubmatch(v); m != nil {
-		// Navitia's address ids, such as the candidates of ambiguous_place,
-		// are "lon;lat": the address keeps its name and town.
+		// An address id, e.g. an ambiguous_place candidate.
 		p, err := s.placeByID(ctx, name, v)
 		if err != nil && AsToolError(err).Code == CodeNotFound {
 			return coordPlace(parseFloat(m[2]), parseFloat(m[1]), v), nil
@@ -134,10 +125,8 @@ func (s *Service) placeByText(ctx context.Context, name, text string) (place, er
 	return fromNavitia(first), nil
 }
 
-// homonyms returns the addresses among the first results that have the first
-// result's number and street in another town, the first result included,
-// unless the query names the first result's town. It returns nil when the
-// address is not ambiguous.
+// homonyms returns the same address in other towns among the first results,
+// or nil if the query already names the first result's town.
 func homonyms(places []navPlace, query string) []Candidate {
 	if len(places) > ambiguityWindow {
 		places = places[:ambiguityWindow]
@@ -145,8 +134,7 @@ func homonyms(places []navPlace, query string) []Candidate {
 	first := &places[0]
 	street := compact(stripTown(first.Name))
 	firstTown := town(first)
-	// The town is looked for in what the query has besides the street, so
-	// that "12 rue de Paris" does not name Paris.
+	// Look for the town outside the street name: "12 rue de Paris" isn't Paris.
 	rest := strings.Replace(compact(query), street, "", 1)
 	if firstTown != "" && strings.Contains(rest, compact(firstTown)) {
 		return nil
@@ -172,8 +160,6 @@ func homonyms(places []navPlace, query string) []Candidate {
 	return out
 }
 
-// town is the commune of a Navitia place: its commune-level administrative
-// region, else the "(…)" of its name.
 func town(p *navPlace) string {
 	if obj := p.object(); obj != nil {
 		for _, r := range obj.AdministrativeRegions {
@@ -193,8 +179,6 @@ func fromNavitia(p *navPlace) place {
 	return place{Resolved: r, navitia: p.ID}
 }
 
-// snap returns the station nearest to p within 500 metres; ok is false when
-// there is none.
 func (s *Service) snap(ctx context.Context, p place) (place, bool, error) {
 	var resp placesNearbyResponse
 	path := "coords/" + formatFloat(p.Lon) + ";" + formatFloat(p.Lat) + "/places_nearby"
@@ -221,8 +205,6 @@ func (s *Service) snap(ctx context.Context, p place) (place, bool, error) {
 	return place{}, false, nil
 }
 
-// stopArea turns a station place into its stop area: a stop point becomes the
-// stop area it belongs to.
 func (s *Service) stopArea(ctx context.Context, p place) (place, error) {
 	if p.Type != typeStopPoint {
 		return p, nil

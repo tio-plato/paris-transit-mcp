@@ -8,24 +8,20 @@ import (
 	"time"
 )
 
-// MaxDestinations is the most destinations rank_destinations takes.
 const MaxDestinations = 20
 
-// RankInput is the input of rank_destinations.
 type RankInput struct {
 	Origin       string             `json:"origin"`
 	Destinations []DestinationInput `json:"destinations"`
 	DepartAt     string             `json:"depart_at,omitempty"`
 }
 
-// DestinationInput is one destination to rank.
 type DestinationInput struct {
 	Label    string `json:"label"`
 	Place    string `json:"place"`
 	ArriveBy string `json:"arrive_by,omitempty"`
 }
 
-// RankOutput is the result of rank_destinations.
 type RankOutput struct {
 	Origin *Endpoint  `json:"origin,omitempty"`
 	Ranked []Ranked   `json:"ranked,omitempty"`
@@ -33,10 +29,8 @@ type RankOutput struct {
 	Error  *ToolError `json:"error,omitempty"`
 }
 
-// SetError sets the result's error.
 func (o *RankOutput) SetError(e *ToolError) { o.Error = e }
 
-// Ranked is a destination with its door-to-door trip.
 type Ranked struct {
 	Label         string   `json:"label"`
 	Resolved      Resolved `json:"resolved"`
@@ -49,13 +43,11 @@ type Ranked struct {
 	CitymapperURL string   `json:"citymapper_url"`
 }
 
-// Failed is a destination the server could not rank.
 type Failed struct {
 	Label string    `json:"label"`
 	Error ToolError `json:"error"`
 }
 
-// RankDestinations runs rank_destinations.
 func (s *Service) RankDestinations(ctx context.Context, in RankInput) (*RankOutput, error) {
 	out, err := s.rankDestinations(ctx, in)
 	if err != nil {
@@ -77,7 +69,7 @@ func (s *Service) rankDestinations(ctx context.Context, in RankInput) (*RankOutp
 		}
 		depart = t
 	}
-	// Every time is checked before the first request, so a wrong one costs no quota.
+	// Check all times before spending any quota.
 	arriveBy := make([]time.Time, len(in.Destinations))
 	for i, d := range in.Destinations {
 		if d.ArriveBy == "" {
@@ -97,11 +89,8 @@ func (s *Service) rankDestinations(ctx context.Context, in RankInput) (*RankOutp
 	out := &RankOutput{Origin: origin.endpoint(), Ranked: []Ranked{}, Failed: []Failed{}, Error: nil}
 	for i, d := range in.Destinations {
 		r, from, oneErr := s.rankOne(ctx, trip{asked: asked, from: origin}, d, depart, arriveBy[i])
-		// When only the origin had to be replaced by a station, and that
-		// answered, it was the cause: it stays replaced for the next
-		// destinations, and the result says so. When the destination was
-		// replaced too, either may have been the cause, and the next
-		// destinations start from the origin as asked.
+		// Keep a snapped origin only if it alone was snapped and it worked;
+		// if both ends were, we can't tell which one was the problem.
 		if oneErr == nil && origin.SnappedFrom == nil && from.SnappedFrom != nil && r.Resolved.SnappedFrom == nil {
 			origin = from
 			out.Origin = origin.endpoint()
@@ -125,15 +114,12 @@ func (s *Service) rankDestinations(ctx context.Context, in RankInput) (*RankOutp
 	return out, nil
 }
 
-// trip is the origin of a ranking: as asked, and as sent to PRIM, which may
-// be a station near it.
+// trip is the origin as asked and as sent to PRIM (maybe a nearby station).
 type trip struct {
 	asked, from place
 }
 
-// rankOne plans the trip to one destination: PRIM's first journey, by
-// timetable, without realtime. It also returns the origin PRIM was asked
-// from.
+// rankOne also returns the origin PRIM was asked from.
 func (s *Service) rankOne(
 	ctx context.Context, origin trip, d DestinationInput, depart, arriveBy time.Time,
 ) (*Ranked, place, error) {

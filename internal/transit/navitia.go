@@ -1,8 +1,7 @@
 package transit
 
-// The parts of Navitia's responses the server reads.
+// Navitia response types, only the fields we use.
 
-// Navitia's embedded types of places.
 const (
 	typeStopArea  = "stop_area"
 	typeStopPoint = "stop_point"
@@ -11,7 +10,6 @@ const (
 	typeAdmin     = "administrative_region"
 )
 
-// Query parameters sent with several requests.
 const (
 	paramCount          = "count"
 	paramDisableGeoJSON = "disable_geojson"
@@ -28,8 +26,6 @@ type navAdminRegion struct {
 	Level int    `json:"level"`
 }
 
-// navObject is any embedded Navitia place: stop area, stop point, address,
-// point of interest or administrative region.
 type navObject struct {
 	ID                    string           `json:"id"`
 	Name                  string           `json:"name"`
@@ -51,7 +47,6 @@ type navPlace struct {
 	AdministrativeRegion *navObject `json:"administrative_region"`
 }
 
-// object is the embedded object the place's type names.
 func (p *navPlace) object() *navObject {
 	switch p.EmbeddedType {
 	case typeStopArea:
@@ -124,7 +119,6 @@ type navJourney struct {
 	Sections []navSection `json:"sections"`
 }
 
-// publicTransport returns the journey's public transport sections.
 func (j *navJourney) publicTransport() []*navSection {
 	var out []*navSection
 	for i := range j.Sections {

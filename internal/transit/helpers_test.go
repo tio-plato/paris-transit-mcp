@@ -28,12 +28,12 @@ const (
 	laDefense   = "stop_area:IDFM:71517"
 	orly        = "stop_area:IDFM:63284"
 	massy       = "stop_area:IDFM:63244"
-	// forum is a point inside the Forum des Halles, where PRIM finds only a walk.
+	// forum is inside the Forum des Halles: PRIM only finds a walk from there.
 	forum      = "48.8619,2.3470"
 	forumCoord = "2.347;48.8619"
 )
 
-// at returns the Paris time of a fixture's name prefix, such as 20261118T0521.
+// at returns the clock of a fixture, from its name prefix (20261118T0521).
 func at(t *testing.T, stamp string) func() time.Time {
 	t.Helper()
 	paris, err := time.LoadLocation("Europe/Paris")
@@ -47,14 +47,12 @@ func at(t *testing.T, stamp string) func() time.Time {
 	return func() time.Time { return now }
 }
 
-// request is what the fake server received.
 type request struct {
 	Path  string
 	Query url.Values
 }
 
-// fake stands in for PRIM. Handlers are looked up by path, then by path
-// prefix; anything else is a 404.
+// fake is PRIM. A handler path ending in * is a prefix; the rest is a 404.
 type fake struct {
 	mu       sync.Mutex
 	requests []request
@@ -82,21 +80,19 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h(w, r)
 }
 
-// handle sets how the fake answers path; a path ending in * is a prefix.
 func (f *fake) handle(path string, h http.HandlerFunc) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.handlers[path] = h
 }
 
-// file answers path with a fixture.
 func (f *fake) file(t *testing.T, path, name string) {
 	t.Helper()
 	data := readFixture(t, name)
 	f.handle(path, func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, http.StatusOK, string(data)) })
 }
 
-// sequence answers path with each fixture in turn, then the last one again.
+// sequence serves the fixtures in turn, then repeats the last one.
 func (f *fake) sequence(t *testing.T, path string, names ...string) {
 	t.Helper()
 	bodies := make([][]byte, 0, len(names))
@@ -114,12 +110,10 @@ func (f *fake) sequence(t *testing.T, path string, names ...string) {
 	})
 }
 
-// status answers path with an HTTP status and no body.
 func (f *fake) status(path string, code int) {
 	f.handle(path, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(code) })
 }
 
-// requestsTo are the requests whose path starts with prefix.
 func (f *fake) requestsTo(prefix string) []request {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -134,7 +128,6 @@ type env struct {
 	fake *fake
 }
 
-// newEnv starts a fake PRIM with no handlers and a service whose clock is now.
 func newEnv(t *testing.T, now func() time.Time) *env {
 	t.Helper()
 	f := &fake{mu: sync.Mutex{}, requests: nil, handlers: map[string]http.HandlerFunc{}}
@@ -163,8 +156,7 @@ func writeJSON(w http.ResponseWriter, status int, body string) {
 	_, _ = io.WriteString(w, body)
 }
 
-// byQuery answers path with the fixture named for the value of a query
-// parameter; another value gets a 404.
+// byQuery picks the fixture by a query parameter's value.
 func (f *fake) byQuery(t *testing.T, path, param string, fixtures map[string]string) {
 	t.Helper()
 	bodies := map[string][]byte{}
@@ -181,7 +173,6 @@ func (f *fake) byQuery(t *testing.T, path, param string, fixtures map[string]str
 	})
 }
 
-// places answers /places?q= with the recorded searches.
 func (f *fake) places(t *testing.T) {
 	t.Helper()
 	f.byQuery(t, navitia+"places", "q", map[string]string{
@@ -196,7 +187,6 @@ func (f *fake) places(t *testing.T) {
 	})
 }
 
-// ride is a public transport section of a hand-written journey.
 type ride struct {
 	from, to    string // stop area ids
 	dep         string // Navitia time
@@ -205,16 +195,13 @@ type ride struct {
 	disruptions []string
 }
 
-// handJourney is a hand-written Navitia journey, for rules that the recorded
-// responses do not exercise.
+// handJourney is for cases the recordings don't cover.
 type handJourney struct {
 	kind                          string
 	transfers, walking, durationS int
 	rides                         []ride
 }
 
-// journeysJSON writes a Navitia journeys response; disruptions is the JSON
-// array of the top-level disruptions.
 func journeysJSON(t *testing.T, journeys []handJourney, disruptions string) string {
 	t.Helper()
 	type obj = map[string]any
@@ -260,7 +247,6 @@ func journeysJSON(t *testing.T, journeys []handJourney, disruptions string) stri
 	return string(data)
 }
 
-// liftOutage is an equipment disruption at a stop area, as PRIM publishes it.
 func liftOutage(id, stopArea string) string {
 	return `{"id": "` + id + `", "status": "active", "tags": ["Ascenseur"],
 		"severity": {"name": "perturbée", "effect": "SIGNIFICANT_DELAYS"},
@@ -269,12 +255,11 @@ func liftOutage(id, stopArea string) string {
 		"impacted_objects": [{"pt_object": {"id": "` + stopArea + `", "embedded_type": "stop_area"}}]}`
 }
 
-// siriVisit is a vehicle of a hand-written SIRI response; times are UTC.
+// siriVisit times are UTC.
 type siriVisit struct {
 	train, destination, aimed, expected, status string
 }
 
-// siriJSON writes a SIRI Lite stop-monitoring response in PRIM's shape.
 func siriJSON(t *testing.T, visits []siriVisit) string {
 	t.Helper()
 	type obj = map[string]any
@@ -302,8 +287,7 @@ func siriJSON(t *testing.T, visits []siriVisit) string {
 	return string(data)
 }
 
-// oneRide serves a journey whose only ride leaves Gare du Nord on RER B
-// towards "Terminus" at dep, train trip, and the SIRI visits.
+// oneRide serves one RER B ride from Gare du Nord to "Terminus", and SIRI.
 func oneRide(t *testing.T, e *env, dep, trip string, visits []siriVisit) {
 	t.Helper()
 	journeys := journeysJSON(t, []handJourney{{kind: "best", transfers: 0, walking: 0, durationS: 1200, rides: []ride{

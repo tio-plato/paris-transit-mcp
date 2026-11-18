@@ -1,19 +1,16 @@
-// Package transit holds the four read-only tools: it resolves places, lines and
-// times, queries PRIM and decides on the server side what the client would
-// otherwise have to guess.
+// Package transit implements the four tools.
 package transit
 
 import (
 	"errors"
 	"fmt"
 	"time"
-	_ "time/tzdata" // Paris times must not depend on the host's zoneinfo
+	_ "time/tzdata" // don't depend on the host's zoneinfo
 
 	"github.com/tio-plato/paris-transit-mcp/internal/prim"
 )
 
-// Error codes of a tool result. The first four make the result an MCP error
-// (isError); the others are answers to the query.
+// Error codes. The first four are MCP errors (isError), the rest are answers.
 const (
 	CodeAuth           = prim.CodeAuth
 	CodeQuota          = prim.CodeQuota
@@ -25,7 +22,6 @@ const (
 	CodeAmbiguousLine  = "ambiguous_line"
 )
 
-// IsErrorCode reports whether a result with this code is an MCP error result.
 func IsErrorCode(code string) bool {
 	switch code {
 	case CodeAuth, CodeQuota, CodeUpstream, CodeBadRequest:
@@ -35,23 +31,19 @@ func IsErrorCode(code string) bool {
 	}
 }
 
-// ToolError is the error object of a tool result.
 type ToolError struct {
 	Code       string      `json:"code"`
 	Message    string      `json:"message"`
 	Candidates []Candidate `json:"candidates,omitempty"`
 
-	// cause is the error the server read this one from, if any.
 	cause error
 }
 
 func (e *ToolError) Error() string { return e.Message }
 
-// Unwrap returns the error the tool error was read from.
 func (e *ToolError) Unwrap() error { return e.cause }
 
-// Candidate is a choice offered with ambiguous_place (id, name, type, town,
-// lat, lon) or ambiguous_line (line_id, line, mode, network).
+// Candidate is a place (id … lon) or a line (line_id … network).
 type Candidate struct {
 	ID      string  `json:"id,omitempty"`
 	Name    string  `json:"name,omitempty"`
@@ -65,8 +57,7 @@ type Candidate struct {
 	Network string  `json:"network,omitempty"`
 }
 
-// AsToolError turns any error into a tool error: PRIM errors keep their code,
-// any other error is an upstream failure.
+// AsToolError keeps a PRIM error's code; anything else is upstream.
 func AsToolError(err error) *ToolError {
 	var te *ToolError
 	if errors.As(err, &te) {
@@ -74,16 +65,14 @@ func AsToolError(err error) *ToolError {
 	}
 	var pe *prim.Error
 	if errors.As(err, &pe) {
-		// The whole chain says what the tool was doing when PRIM failed.
 		return &ToolError{Code: pe.Code, Message: err.Error(), Candidates: nil}
 	}
 	return &ToolError{Code: CodeUpstream, Message: err.Error(), Candidates: nil}
 }
 
-// failure wraps err from a request about a stop or line already resolved.
-// A 404 that carries Navitia's error body is Navitia's answer that it has
-// nothing; one without it comes from the gateway: PRIM failing, not an
-// answer that the thing does not exist.
+// failure wraps an error about a stop or line we already resolved. A 404
+// without Navitia's error body comes from the gateway, so it's a failure,
+// not not_found.
 func failure(err error, format string, args ...any) error {
 	what := fmt.Sprintf(format, args...)
 	if gatewayNotFound(err) {
@@ -92,17 +81,14 @@ func failure(err error, format string, args ...any) error {
 	return fmt.Errorf("%s: %w", what, err)
 }
 
-// navitiaNotFound reports whether err is Navitia's own 404, with its error body.
 func navitiaNotFound(err error) bool {
 	return AsToolError(err).Code == CodeNotFound && navitiaErrorID(err) != ""
 }
 
-// gatewayNotFound reports whether err is a 404 without Navitia's error body.
 func gatewayNotFound(err error) bool {
 	return AsToolError(err).Code == CodeNotFound && navitiaErrorID(err) == ""
 }
 
-// navitiaErrorID is the id of the Navitia error body behind err, such as no_solution.
 func navitiaErrorID(err error) string {
 	var pe *prim.Error
 	if errors.As(err, &pe) {
@@ -111,8 +97,7 @@ func navitiaErrorID(err error) string {
 	return ""
 }
 
-// stopsCall reports whether err ends the whole call: PRIM refused the token
-// or the quota is spent, so every further request would fail too.
+// stopsCall: after auth or quota errors every further request fails too.
 func stopsCall(err error) bool {
 	code := AsToolError(err).Code
 	return code == CodeAuth || code == CodeQuota
@@ -122,7 +107,6 @@ func newError(code, format string, args ...any) *ToolError {
 	return &ToolError{Code: code, Message: fmt.Sprintf(format, args...), Candidates: nil}
 }
 
-// Resolved is what a place parameter was understood as.
 type Resolved struct {
 	ID          string       `json:"id"`
 	Name        string       `json:"name"`
@@ -132,25 +116,21 @@ type Resolved struct {
 	SnappedFrom *SnappedFrom `json:"snapped_from,omitempty"`
 }
 
-// SnappedFrom names the place the server replaced by a nearby station.
 type SnappedFrom struct {
 	Name      string `json:"name"`
 	DistanceM int    `json:"distance_m"`
 }
 
-// Endpoint wraps the resolved place of a parameter.
 type Endpoint struct {
 	Resolved Resolved `json:"resolved"`
 }
 
-// Service runs the tools.
 type Service struct {
 	prim  *prim.Client
 	now   func() time.Time
 	paris *time.Location
 }
 
-// New returns the service; now is the clock that sets "now" for times and realtime.
 func New(client *prim.Client, now func() time.Time) (*Service, error) {
 	paris, err := time.LoadLocation("Europe/Paris")
 	if err != nil {

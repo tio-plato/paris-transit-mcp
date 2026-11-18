@@ -8,18 +8,17 @@ import (
 
 var trailingParens = regexp.MustCompile(`\s*\([^()]*\)\s*$`)
 
-// stripTown removes a trailing "(…)", where Navitia writes the town.
+// stripTown removes Navitia's trailing "(Town)".
 func stripTown(name string) string {
 	return strings.TrimSpace(trailingParens.ReplaceAllString(name, ""))
 }
 
-// townInName is the trailing "(…)" of a Navitia name, without the brackets.
 func townInName(name string) string {
 	m := trailingParens.FindString(name)
 	return strings.TrimSpace(strings.Trim(strings.TrimSpace(m), "()"))
 }
 
-// fold lowercases s and removes the accents of French and nearby languages.
+// fold lowercases and strips accents.
 func fold(s string) string {
 	var b strings.Builder
 	for _, r := range strings.ToLower(s) {
@@ -55,8 +54,7 @@ func unaccent(r rune) string {
 	}
 }
 
-// compact folds s and keeps only letters and digits, so that
-// "Massy - Palaiseau" and "Massy-Palaiseau" compare equal.
+// compact keeps letters and digits: "Massy - Palaiseau" == "Massy-Palaiseau".
 func compact(s string) string {
 	var b strings.Builder
 	for _, r := range fold(s) {
@@ -67,8 +65,6 @@ func compact(s string) string {
 	return b.String()
 }
 
-// sameStop reports whether two stop names name the same stop once the town,
-// accents, spaces and hyphens are removed.
 func sameStop(a, b string) bool {
 	ca, cb := compact(stripTown(a)), compact(stripTown(b))
 	return ca != "" && ca == cb

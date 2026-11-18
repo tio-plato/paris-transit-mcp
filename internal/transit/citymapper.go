@@ -7,9 +7,8 @@ import (
 
 const citymapperDirections = "https://citymapper.com/directions"
 
-// citymapperURL links to the same trip in Citymapper. Citymapper takes
-// coordinates as "lat,lon" and only an arrival time, so arrival is the zero
-// time for a trip asked by departure.
+// citymapperURL: Citymapper takes "lat,lon" and an arrival time only; pass
+// the zero time for a departure.
 func (s *Service) citymapperURL(from, to *Resolved, arrival time.Time) string {
 	q := url.Values{
 		"startcoord": {formatFloat(from.Lat) + "," + formatFloat(from.Lon)},

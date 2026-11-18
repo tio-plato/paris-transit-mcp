@@ -18,8 +18,6 @@ import (
 	"github.com/tio-plato/paris-transit-mcp/internal/transit"
 )
 
-// fixtures maps request paths, and for /places and /pt_objects the q
-// parameter, to recorded PRIM responses.
 func fixtures() map[string]string {
 	return map[string]string{
 		"/v2/navitia/places?q=Gare du Nord":                      "20261118T0520-places-gare-du-nord.json",
@@ -62,8 +60,7 @@ func (f *fakePRIM) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// connect serves the tools over the SDK's in-memory transport, so the SDK
-// validates the arguments and the results against the tools' schemas.
+// connect goes through the SDK so it validates inputs and outputs.
 func connect(t *testing.T) (*mcp.ClientSession, *fakePRIM) {
 	t.Helper()
 	fake := &fakePRIM{t: t}
@@ -117,8 +114,7 @@ func TestToolsThroughTheSDK(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		args map[string]any
-		// key is a field the structured result must hold.
-		key string
+		key  string
 	}{
 		{"plan_journey", map[string]any{"origin": "Gare du Nord", "destination": "Massy-Palaiseau"}, "journeys"},
 		{"rank_destinations", map[string]any{"origin": "Gare du Nord", "destinations": []any{
@@ -191,7 +187,7 @@ func TestRankSchemaRefusesTooManyOrNullDestinations(t *testing.T) {
 			t.Errorf("destinations %v accepted (%v)", destinations, err)
 			continue
 		}
-		// The SDK refuses them by the input schema, before the tool runs.
+		// Refused by the schema, before the tool runs.
 		if text := res.Content[0].(*mcp.TextContent).Text; !strings.Contains(text, "validating") {
 			t.Errorf("destinations %v: error %q is not a schema validation error", destinations, text)
 		}

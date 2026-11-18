@@ -6,30 +6,23 @@ import (
 )
 
 const (
-	// MaxLines is the most lines next_departures and line_status take.
-	MaxLines = 10
-	// DefaultDays is how many days ahead line_status looks for works by default.
+	MaxLines    = 10
 	DefaultDays = 7
-	// maxPeriods is how many periods line_status lists per disruption.
-	maxPeriods = 5
+	maxPeriods  = 5
 )
 
-// StatusInput is the input of line_status.
 type StatusInput struct {
 	Lines []string `json:"lines"`
 	Days  int      `json:"days,omitempty"`
 }
 
-// StatusOutput is the result of line_status.
 type StatusOutput struct {
 	Lines []LineStatus `json:"lines,omitempty"`
 	Error *ToolError   `json:"error,omitempty"`
 }
 
-// SetError sets the result's error.
 func (o *StatusOutput) SetError(e *ToolError) { o.Error = e }
 
-// LineStatus is the service disruptions of one line.
 type LineStatus struct {
 	Line     string     `json:"line"`
 	LineID   string     `json:"line_id,omitempty"`
@@ -38,20 +31,17 @@ type LineStatus struct {
 	Error    *ToolError `json:"error,omitempty"`
 }
 
-// Report is one service disruption of a line.
 type Report struct {
 	Title   string   `json:"title"`
 	Text    string   `json:"text"`
 	Periods []Period `json:"periods"`
 }
 
-// Period is when a disruption applies.
 type Period struct {
 	From  string `json:"from"`
 	Until string `json:"until"`
 }
 
-// LineStatus runs line_status.
 func (s *Service) LineStatus(ctx context.Context, in StatusInput) (*StatusOutput, error) {
 	days := in.Days
 	if days == 0 {
@@ -90,7 +80,7 @@ func (s *Service) lineStatus(ctx context.Context, name string, days int) (*LineS
 		return nil, err
 	}
 	var resp lineReportsResponse
-	// A line without disruption answers 200; a 404 is never "all clear".
+	// A calm line answers 200, so a 404 is never "all clear".
 	err = s.prim.Navitia(ctx, "line_reports/lines/"+l.ID+"/line_reports", nil, &resp)
 	if err != nil {
 		return nil, failure(err, "read the line reports of %s", l.ID)
@@ -122,15 +112,13 @@ func (s *Service) lineStatus(ctx context.Context, name string, days int) (*LineS
 	return out, nil
 }
 
-// mergedReport is a service disruption with all its periods, sorted by start.
 type mergedReport struct {
 	title, text string
 	periods     []period
 }
 
-// mergeReports keeps the service disruptions. PRIM may publish one disruption
-// as several impacts with the same title and text, say one per section of the
-// line: they are merged into one, with their periods together.
+// mergeReports merges impacts with the same title and text: PRIM splits one
+// disruption into several, e.g. one per section of the line.
 func (s *Service) mergeReports(disruptions []navDisruption) []*mergedReport {
 	var out []*mergedReport
 	byKey := map[string]*mergedReport{}

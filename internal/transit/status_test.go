@@ -11,8 +11,6 @@ import (
 	"github.com/tio-plato/paris-transit-mcp/internal/transit"
 )
 
-// linesEnv answers /pt_objects with the recorded line searches and every
-// line report with no disruption.
 func linesEnv(t *testing.T) *env {
 	t.Helper()
 	e := newEnv(t, at(t, "20261118T0523"))
@@ -43,8 +41,7 @@ func TestLineNamesResolveToRailWhenOnlyOneIsRail(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// RER B is not RER Bus B, the replacement bus; bare 14 is metro 14, not
-	// Vallée Sud Grand Paris bus 14; bare B is RER B.
+	// Not the RER B replacement bus, nor bus 14.
 	want := []string{"line:IDFM:C01743", "line:IDFM:C01384", "line:IDFM:C01743"}
 	if len(out.Lines) != len(want) {
 		t.Fatalf("lines %+v, want %d", out.Lines, len(want))
@@ -92,7 +89,6 @@ func TestAmbiguousLineNameListsCandidates(t *testing.T) {
 func TestDisruptionTitleKeepsItsArrowAndTextLosesItsHTML(t *testing.T) {
 	t.Parallel()
 	e := linesEnv(t)
-	// As PRIM writes them: a plain text title with <->, an HTML web message.
 	e.fake.handle(navitia+"line_reports/*", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, `{"line_reports": [], "disruptions": [{"id": "works", "status": "future",
 			"severity": {"name": "perturbée", "effect": "SIGNIFICANT_DELAYS"},
@@ -124,8 +120,7 @@ func TestDisruptionTitleKeepsItsArrowAndTextLosesItsHTML(t *testing.T) {
 func TestLineReportsNotFoundIsAnErrorNotAllClear(t *testing.T) {
 	t.Parallel()
 	e := linesEnv(t)
-	// A line with no disruption answers 200: a 404 for a line just resolved
-	// is a failure, and with every line failing, the call fails.
+	// A calm line answers 200, so this 404 is a failure.
 	e.fake.status(navitia+"line_reports/*", http.StatusNotFound)
 
 	out, err := e.svc.LineStatus(t.Context(), status("RER B"))
@@ -156,8 +151,7 @@ func TestMetroBisLinesResolve(t *testing.T) {
 	}
 }
 
-// rerDReports serves RER D's line reports recorded at 10:13 on a strike day,
-// while the Corbeil-Essonnes <> Malesherbes works were in force.
+// rerDReports: RER D at 10:13 on a strike day, during the Malesherbes works.
 func rerDReports(t *testing.T) *env {
 	t.Helper()
 	e := newEnv(t, at(t, "20261118T1013"))
@@ -186,7 +180,7 @@ func TestLineStatusLeavesBrokenLiftsOut(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The recording holds 130 lift faults, tagged Ascenseur, beside the works.
+	// The recording has 130 lift faults.
 	l := out.Lines[0]
 	for _, title := range append(titles(l.Active), titles(l.Upcoming)...) {
 		if strings.Contains(title, "ascenseur") {
@@ -222,7 +216,7 @@ func TestLineStatusSortsWorksInForceAndComing(t *testing.T) {
 	if works == nil {
 		t.Fatalf("active %v, want the Malesherbes works, in force 10:10-14:20", titles(l.Active))
 	}
-	// In force now, then the 19th and the 20th; the 16th and 17th are over.
+	// Today, then the 19th and 20th; the 16th and 17th are over.
 	want := []transit.Period{
 		{From: "2026-11-18T10:10:00+01:00", Until: "2026-11-18T14:20:00+01:00"},
 		{From: "2026-11-19T10:10:00+01:00", Until: "2026-11-19T14:20:00+01:00"},
@@ -264,8 +258,7 @@ func TestLineStatusDaysBoundTheUpcomingWorks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The match on the 21st at 16:00 is 3 days and 6 hours away; the night
-	// works from Paris Lyon start tonight.
+	// The match is 3 days and 6 hours away; the night works start tonight.
 	upcoming := titles(out.Lines[0].Upcoming)
 	if slices.Contains(upcoming, "RER D - Stade de France - Match Rugby 21/11.") {
 		t.Errorf("upcoming %v holds the match, beyond 3 days", upcoming)

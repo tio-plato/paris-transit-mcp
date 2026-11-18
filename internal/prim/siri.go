@@ -2,7 +2,7 @@ package prim
 
 import "time"
 
-// StopMonitoring is the part of a SIRI Lite stop-monitoring response the server reads.
+// StopMonitoring is the part of a SIRI Lite response we read.
 type StopMonitoring struct {
 	Siri struct {
 		ServiceDelivery struct {
@@ -13,7 +13,6 @@ type StopMonitoring struct {
 	} `json:"Siri"`
 }
 
-// Visits returns the visits of every delivery.
 func (sm *StopMonitoring) Visits() []Visit {
 	var out []Visit
 	for _, d := range sm.Siri.ServiceDelivery.StopMonitoringDelivery {
@@ -22,12 +21,10 @@ func (sm *StopMonitoring) Visits() []Visit {
 	return out
 }
 
-// Value is SIRI's wrapper around a string.
 type Value struct {
 	Value string `json:"value"`
 }
 
-// Visit is one vehicle calling at the monitored stop.
 type Visit struct {
 	MonitoredVehicleJourney struct {
 		LineRef            Value   `json:"LineRef"`
@@ -48,9 +45,8 @@ type Visit struct {
 	} `json:"MonitoredVehicleJourney"`
 }
 
-// Departure is the expected departure time, or the aimed one when SIRI gives
-// no expected time; ok is false when the visit has no departure, such as a
-// train that ends its run at this stop.
+// Departure is the expected time, else the aimed one. ok is false for a
+// train that terminates here.
 func (v *Visit) Departure() (time.Time, bool) {
 	call := v.MonitoredVehicleJourney.MonitoredCall
 	switch {
@@ -63,7 +59,6 @@ func (v *Visit) Departure() (time.Time, bool) {
 	}
 }
 
-// Destination is the destination name, or the destination display when SIRI gives no name.
 func (v *Visit) Destination() string {
 	j := v.MonitoredVehicleJourney
 	if len(j.DestinationName) > 0 && j.DestinationName[0].Value != "" {
@@ -75,8 +70,6 @@ func (v *Visit) Destination() string {
 	return ""
 }
 
-// HasTrainNumber reports whether the visit's vehicle journey name or train
-// number is n.
 func (v *Visit) HasTrainNumber(n string) bool {
 	j := v.MonitoredVehicleJourney
 	for _, list := range [][]Value{j.VehicleJourneyName, j.TrainNumbers.TrainNumberRef} {

@@ -86,8 +86,7 @@ func TestNavitiaIDsToSIRIRefs(t *testing.T) {
 
 func TestTokenFromEnvRefusesAnUnexpandedReference(t *testing.T) {
 	t.Parallel()
-	// A client that cannot expand ${PRIM_API_KEY} passes the reference as it
-	// is, with the fallback a user may have written in it.
+	// What a client passes when the variable is unset.
 	_, err := prim.TokenFromEnv(func(string) string { return "${PRIM_API_KEY:-" + testToken + "}" })
 	if err == nil {
 		t.Fatal("no error for an unexpanded ${PRIM_API_KEY}")
@@ -108,7 +107,7 @@ func TestConcurrentRequestsArePacedByTheRate(t *testing.T) {
 		_, _ = io.WriteString(w, `{}`)
 	}))
 	t.Cleanup(srv.Close)
-	// PRIM allows 5 requests a second per API; Rate 0 is the production rate.
+	// PRIM allows 5 per second. Rate 0 is the default.
 	const primLimit, n = 5, 4
 	c := prim.New(prim.Config{BaseURL: srv.URL, Token: testToken, Timeout: 0, Rate: 0})
 
@@ -119,8 +118,6 @@ func TestConcurrentRequestsArePacedByTheRate(t *testing.T) {
 	wg.Wait()
 
 	slices.SortFunc(arrivals, func(a, b time.Time) int { return a.Compare(b) })
-	// Below PRIM's limit, n requests span more than n-1 of its intervals,
-	// whatever their concurrency.
 	minSpan := time.Duration(n-1) * time.Second / primLimit
 	if span := arrivals[n-1].Sub(arrivals[0]); span < minSpan {
 		t.Errorf("%d concurrent requests arrived within %v, faster than PRIM's %d a second", n, span, primLimit)
