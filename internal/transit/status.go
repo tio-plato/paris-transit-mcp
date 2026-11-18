@@ -53,9 +53,6 @@ type Period struct {
 
 // LineStatus runs line_status.
 func (s *Service) LineStatus(ctx context.Context, in StatusInput) (*StatusOutput, error) {
-	if len(in.Lines) == 0 || len(in.Lines) > MaxLines {
-		return nil, newError(CodeBadRequest, "lines has %d items; it takes 1 to %d", len(in.Lines), MaxLines)
-	}
 	days := in.Days
 	if days == 0 {
 		days = DefaultDays

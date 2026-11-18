@@ -187,8 +187,13 @@ func TestRankSchemaRefusesTooManyOrNullDestinations(t *testing.T) {
 		res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: "rank_destinations", Arguments: map[string]any{
 			"origin": "Gare du Nord", "destinations": destinations,
 		}})
-		if err == nil && !res.IsError {
-			t.Errorf("destinations %v accepted", destinations)
+		if err != nil || !res.IsError {
+			t.Errorf("destinations %v accepted (%v)", destinations, err)
+			continue
+		}
+		// The SDK refuses them by the input schema, before the tool runs.
+		if text := res.Content[0].(*mcp.TextContent).Text; !strings.Contains(text, "validating") {
+			t.Errorf("destinations %v: error %q is not a schema validation error", destinations, text)
 		}
 	}
 	if n := fake.requests.Load(); n != 0 {

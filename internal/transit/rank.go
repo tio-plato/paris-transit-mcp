@@ -69,10 +69,6 @@ func (s *Service) RankDestinations(ctx context.Context, in RankInput) (*RankOutp
 }
 
 func (s *Service) rankDestinations(ctx context.Context, in RankInput) (*RankOutput, error) {
-	if len(in.Destinations) == 0 || len(in.Destinations) > MaxDestinations {
-		return nil, newError(CodeBadRequest, "destinations has %d items; it takes 1 to %d",
-			len(in.Destinations), MaxDestinations)
-	}
 	depart := s.now()
 	if in.DepartAt != "" {
 		t, err := s.parseTime("depart_at", in.DepartAt)
