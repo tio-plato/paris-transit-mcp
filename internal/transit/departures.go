@@ -113,7 +113,9 @@ func (s *Service) nextDepartures(ctx context.Context, in DeparturesInput) (*Depa
 				out.Lines = append(out.Lines, failedLine(name, "", "", AsToolError(lerr)))
 				continue
 			}
-			selected = append(selected, l)
+			if !slices.ContainsFunc(selected, func(x line) bool { return x.ID == l.ID }) {
+				selected = append(selected, l)
+			}
 		}
 	}
 	for _, l := range selected {

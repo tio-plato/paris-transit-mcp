@@ -288,3 +288,20 @@ func TestTimetableNotFoundIsAnErrorUnlessNavitiaSaysNoDeparture(t *testing.T) {
 		}
 	}
 }
+
+func TestALineNamedTwiceIsAskedOnce(t *testing.T) {
+	t.Parallel()
+	e := saintLazareEnv(t)
+
+	out, err := e.svc.NextDepartures(t.Context(), departures("Gare Saint-Lazare", "J", "Transilien J", lineJ))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if n := len(e.fake.requestsTo(siri)); n != 1 {
+		t.Errorf("sent %d SIRI requests for one line, want 1", n)
+	}
+	if len(out.Lines) != 1 {
+		t.Errorf("lines %+v, want the J line once", out.Lines)
+	}
+}
