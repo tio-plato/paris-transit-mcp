@@ -80,6 +80,12 @@ func TestDeparturesAtATerminusListOnlyTrainsThatLeave(t *testing.T) {
 	if next[0].Time != "2026-11-18T05:31:00+01:00" || next[0].Destination != "Ermont - Eaubonne" {
 		t.Errorf("first departure %+v, want Ermont - Eaubonne at 05:31 Paris time", next[0])
 	}
+	// SIRI gives the J line no direction name: the direction names the termini
+	// of the departures listed, three to Ermont - Eaubonne and one to
+	// Boissy-l'Aillerie, not the five other termini later in the group.
+	if got := out.Lines[0].Direction; got != "Ermont - Eaubonne / Boissy-l'Aillerie" {
+		t.Errorf("direction %q, want Ermont - Eaubonne / Boissy-l'Aillerie", got)
+	}
 }
 
 func TestDeparturesWithoutLinesQueryTwelveRailFirst(t *testing.T) {

@@ -233,11 +233,12 @@ func (s *Service) lineDepartures(ctx context.Context, stop *place, l *line, limi
 type groupedDeparture struct {
 	at  time.Time
 	dep Departure
+	// terminus names the departure's terminus in a direction made of termini.
+	terminus string
 }
 
 type departureGroup struct {
 	key, direction string
-	destinations   []string
 	departures     []groupedDeparture
 }
 
@@ -247,37 +248,39 @@ type groups struct {
 	byKey map[string]*departureGroup
 }
 
-func (g *groups) add(key, direction, destination string, d groupedDeparture) {
+func (g *groups) add(key, direction string, d groupedDeparture) {
 	if g.byKey == nil {
 		g.byKey = map[string]*departureGroup{}
 	}
 	grp := g.byKey[key]
 	if grp == nil {
-		grp = &departureGroup{key: key, direction: direction, destinations: nil, departures: nil}
+		grp = &departureGroup{key: key, direction: direction, departures: nil}
 		g.byKey[key] = grp
 		g.order = append(g.order, key)
-	}
-	if destination != "" && !slices.Contains(grp.destinations, destination) {
-		grp.destinations = append(grp.destinations, destination)
 	}
 	grp.departures = append(grp.departures, d)
 }
 
 // result turns the groups into one result per direction, each with at most
-// limit departures, the direction with the next departure first.
+// limit departures, the direction with the next departure first. A group
+// without a direction name is named by the termini of the departures listed.
 func (g *groups) result(l *line, realtime bool, limit int) []LineDepartures {
 	var out []LineDepartures
 	var firsts []time.Time
 	for _, key := range g.order {
 		grp := g.byKey[key]
 		slices.SortStableFunc(grp.departures, func(a, b groupedDeparture) int { return a.at.Compare(b.at) })
-		direction := grp.direction
-		if direction == "" {
-			direction = strings.Join(grp.destinations, " / ")
-		}
 		next := make([]Departure, 0, limit)
+		var termini []string
 		for _, d := range grp.departures[:min(len(grp.departures), limit)] {
 			next = append(next, d.dep)
+			if d.terminus != "" && !slices.Contains(termini, d.terminus) {
+				termini = append(termini, d.terminus)
+			}
+		}
+		direction := grp.direction
+		if direction == "" {
+			direction = strings.Join(termini, " / ")
 		}
 		out = append(out, LineDepartures{
 			Line: l.Code, Mode: l.Mode, LineID: l.ID, Direction: direction, Realtime: realtime, Next: next, Error: nil,
@@ -330,7 +333,7 @@ func (s *Service) realtimeGroups(visits []visit, l *line, limit int) []LineDepar
 				direction = j.DirectionName[0].Value
 			}
 		}
-		g.add(key, direction, d.Destination, groupedDeparture{at: at, dep: d})
+		g.add(key, direction, groupedDeparture{at: at, dep: d, terminus: d.Destination})
 	}
 	return g.result(l, true, limit)
 }
@@ -356,9 +359,9 @@ func (s *Service) timetableGroups(ctx context.Context, stop *place, l *line, lim
 		}
 		key := cmp.Or(d.Route.DirectionType, d.Route.Direction.ID, d.Route.ID)
 		dest := d.DisplayInformations.Direction
-		g.add(key, "", d.Route.Direction.Name, groupedDeparture{at: at, dep: Departure{
+		g.add(key, "", groupedDeparture{at: at, dep: Departure{
 			Time: s.iso(at), Minutes: s.minutesUntil(at), Destination: dest, Status: nil, Aimed: nil, Platform: nil,
-		}})
+		}, terminus: d.Route.Direction.Name})
 	}
 	result := g.result(l, false, limit)
 	if len(result) == 0 {
