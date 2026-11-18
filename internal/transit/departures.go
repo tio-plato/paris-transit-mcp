@@ -348,7 +348,7 @@ func (s *Service) timetableGroups(ctx context.Context, stop *place, l *line, lim
 		paramCount:          {strconv.Itoa(max(minTimetable, timetableMargin*limit))},
 		paramDisableGeoJSON: {valueTrue},
 	}, &resp)
-	if err != nil && AsToolError(err).Code != CodeNotFound {
+	if err != nil && !noDeparture(err) {
 		return nil, err
 	}
 	var g groups
@@ -370,6 +370,18 @@ func (s *Service) timetableGroups(ctx context.Context, stop *place, l *line, lim
 		}}
 	}
 	return result, nil
+}
+
+// noDeparture reports whether err is Navitia saying the stop has no departure
+// to give, as opposed to a failure.
+func noDeparture(err error) bool {
+	switch navitiaErrorID(err) {
+	case "no_departure_this_day", "no_active_circulation_this_day", "terminus", "partial_terminus",
+		"active_disruption":
+		return true
+	default:
+		return false
+	}
 }
 
 func nonEmpty(s string) *string {

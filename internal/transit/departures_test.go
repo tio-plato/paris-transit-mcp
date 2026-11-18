@@ -263,3 +263,28 @@ func TestDeparturesGroupByDirectionAndKeepCancelledTrains(t *testing.T) {
 		t.Error("no cancelled departure, want train 126603 cancelled")
 	}
 }
+
+func TestTimetableNotFoundIsAnErrorUnlessNavitiaSaysNoDeparture(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		body      string
+		wantError bool
+	}{
+		{``, true}, // a gateway 404, no Navitia body
+		{`{"error": {"id": "no_departure_this_day", "message": "no departure"}}`, false},
+	} {
+		e := saintLazareEnv(t)
+		e.fake.handle(navitia+"stop_areas/"+saintLazare+"/departures", func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, http.StatusNotFound, tc.body)
+		})
+
+		out, err := e.svc.NextDepartures(t.Context(), departures("Gare Saint-Lazare", "N151"))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(out.Lines) != 1 || (out.Lines[0].Error != nil) != tc.wantError {
+			t.Errorf("404 %q: lines %+v, want error %v", tc.body, out.Lines, tc.wantError)
+		}
+	}
+}
