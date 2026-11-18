@@ -385,3 +385,51 @@ func TestJourneyDisruptionsSortLiftsFromWorks(t *testing.T) {
 		t.Errorf("service %+v, want the works on line B", d.Service)
 	}
 }
+
+func TestStepFreeNeverPutsALongWalkFirst(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, at(t, "20261118T0521"))
+	journeys := journeysJSON(t, []handJourney{
+		{kind: "best", transfers: 1, walking: 300, durationS: 2400, rides: []ride{
+			{from: gareDuNord, to: chateletLH, dep: "20261119T083000", code: "B", trip: "", disruptions: nil},
+			{from: chateletLH, to: orly, dep: "20261119T084000", code: "14", trip: "", disruptions: nil},
+		}},
+		// PRIM's walk-only alternative: no transfer, no lift, three hours.
+		{kind: "non_pt_walk", transfers: 0, walking: 10800, durationS: 10800, rides: nil},
+	}, `[]`)
+	e.fake.handle(navitia+"journeys", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, 200, journeys) })
+	in := plan("48.8809,2.3556", "48.7289,2.3610")
+	in.Profile = "step_free"
+
+	out, err := e.svc.PlanJourney(t.Context(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(out.Journeys) == 0 || out.Journeys[0].Kind != "best" {
+		t.Errorf("journeys %+v, want the public transport journey first", out.Journeys)
+	}
+}
+
+func TestLongWalkIsNotListedBesideTransit(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, at(t, "20261118T0521"))
+	e.fake.places(t)
+	// PRIM answers Châtelet - Les Halles → La Défense with RER A and a
+	// three-hour walk.
+	e.fake.file(t, navitia+"journeys", "20261118T0521-journey-chatelet-la-defense.json")
+
+	out, err := e.svc.PlanJourney(t.Context(), plan("48.8617,2.3470", "La Défense"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, j := range out.Journeys {
+		if len(j.Legs) == 0 && j.DurationMin > 30 {
+			t.Errorf("journey %s walks %d minutes", j.Kind, j.DurationMin)
+		}
+	}
+	if len(out.Journeys) != 1 || out.Journeys[0].Legs[0].Line != "A" {
+		t.Errorf("journeys %+v, want RER A alone", out.Journeys)
+	}
+}

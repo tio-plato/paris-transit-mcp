@@ -161,6 +161,11 @@ func (s *Service) planJourney(ctx context.Context, in JourneyInput) (*JourneyOut
 	list := make([]ranked, 0, len(resp.Journeys))
 	for i := range resp.Journeys {
 		j := &resp.Journeys[i]
+		// PRIM may add a walk of hours beside public transport: it is no
+		// alternative, as the walk-only rule of journeys says.
+		if !answer(j) {
+			continue
+		}
 		first, cancelled, rtErr := rt.firstLeg(ctx, j)
 		if rtErr != nil {
 			return nil, rtErr
@@ -297,16 +302,20 @@ func answers(resp *journeysResponse) bool {
 	return firstAnswer(resp) != nil
 }
 
-// firstAnswer is the first journey that uses public transport or walks no
-// longer than 30 minutes, or nil.
+// firstAnswer is the first journey that answers the trip, or nil.
 func firstAnswer(resp *journeysResponse) *navJourney {
 	for i := range resp.Journeys {
-		j := &resp.Journeys[i]
-		if len(j.publicTransport()) > 0 || time.Duration(j.Duration)*time.Second <= maxWalk {
-			return j
+		if answer(&resp.Journeys[i]) {
+			return &resp.Journeys[i]
 		}
 	}
 	return nil
+}
+
+// answer reports whether a journey answers the trip: it uses public
+// transport, or walks no longer than 30 minutes.
+func answer(j *navJourney) bool {
+	return len(j.publicTransport()) > 0 || time.Duration(j.Duration)*time.Second <= maxWalk
 }
 
 func (s *Service) queryJourneys(ctx context.Context, q *journeyQuery) (*journeysResponse, error) {
