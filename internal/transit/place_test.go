@@ -178,3 +178,21 @@ func TestTimeMoreThanAnHourAgoIsRefused(t *testing.T) {
 		t.Errorf("sent %d journeys requests, want 1 (for the time 30 minutes ago)", n)
 	}
 }
+
+func TestChosenAddressCandidateKeepsItsName(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, at(t, "20261118T0615"))
+	// The id of the Montreuil candidate of "12 rue Victor Hugo".
+	e.fake.file(t, navitia+"places/2.439570;48.859981", "20261118T0615-places-id-12-rue-victor-hugo-montreuil.json")
+	e.fake.file(t, navitia+"journeys", "20261118T0520-journey-gare-du-nord-massy.json")
+
+	out, err := e.svc.PlanJourney(t.Context(), plan("2.439570;48.859981", "48.7250,2.2590"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	o := out.Origin.Resolved
+	if o.Name != "12 Rue Victor Hugo (Montreuil)" || o.Type != "address" || o.Lat != 48.859981 || o.Lon != 2.43957 {
+		t.Errorf("origin %+v, want the Montreuil address", o)
+	}
+}

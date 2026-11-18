@@ -7,7 +7,8 @@ time of the recording, in Paris time; the tests set their clock to it.
 
 The queries name only stations and public places: Gare du Nord, Gare Saint-Lazare, Châtelet - Les Halles,
 La Défense, Massy - Palaiseau, Orly airport, a point inside the Forum des Halles (48.8619, 2.3470), and the
-public names "Victor Hugo" and "12 rue Victor Hugo". Only response bodies were kept, no request header.
+public names "Victor Hugo" and "12 rue Victor Hugo", the Montreuil one of which is also looked up by its id.
+Only response bodies were kept, no request header.
 
 Source: Île-de-France Mobilités, PRIM. These data are not covered by the licence of the code. They are reused
 under the licences of the APIs they come from, as the PRIM pages of these APIs stated them on 2026-11-18:

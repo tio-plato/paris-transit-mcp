@@ -73,7 +73,13 @@ func (s *Service) resolvePlace(ctx context.Context, name, value string) (place, 
 		return coordPlace(lat, lon, v), nil
 	}
 	if m := lonLatID.FindStringSubmatch(v); m != nil {
-		return coordPlace(parseFloat(m[2]), parseFloat(m[1]), v), nil
+		// Navitia's address ids, such as the candidates of ambiguous_place,
+		// are "lon;lat": the address keeps its name and town.
+		p, err := s.placeByID(ctx, name, v)
+		if err != nil && AsToolError(err).Code == CodeNotFound {
+			return coordPlace(parseFloat(m[2]), parseFloat(m[1]), v), nil
+		}
+		return p, err
 	}
 	if navitiaID.MatchString(v) {
 		return s.placeByID(ctx, name, v)
