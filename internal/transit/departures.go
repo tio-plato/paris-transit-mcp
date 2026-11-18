@@ -3,7 +3,6 @@ package transit
 import (
 	"cmp"
 	"context"
-	"fmt"
 	"net/url"
 	"slices"
 	"strconv"
@@ -14,42 +13,33 @@ import (
 )
 
 const (
-	// MaxStopLines is how many lines of a stop next_departures queries when
-	// the client names none.
 	MaxStopLines = 12
-	// DefaultLimit is how many departures per line and direction next_departures returns by default.
 	DefaultLimit = 3
-	// stale is how long after its time a departure SIRI still lists is dropped.
+	// stale: SIRI keeps listing trains that just left.
 	stale = time.Minute
-	// maxStopLinesListed bounds the lines of a stop asked of Navitia; the
-	// biggest stations have about fifty.
+	// maxStopLinesListed: big stations have about 50.
 	maxStopLinesListed = 200
-	// timetableMargin is how many timetabled departures are asked per
-	// departure listed, as they spread over the directions.
+	// timetableMargin: timetabled departures spread over several directions.
 	timetableMargin = 4
-	// minTimetable is the fewest timetabled departures asked.
-	minTimetable = 10
+	minTimetable    = 10
 )
 
-// DeparturesInput is the input of next_departures.
 type DeparturesInput struct {
 	Stop  string   `json:"stop"`
 	Lines []string `json:"lines,omitempty"`
 	Limit int      `json:"limit,omitempty"`
 }
 
-// DeparturesOutput is the result of next_departures.
 type DeparturesOutput struct {
-	Stop         *Endpoint        `json:"stop,omitempty"`
-	Lines        []LineDepartures `json:"lines,omitempty"`
-	SkippedLines []LineRef        `json:"skipped_lines,omitempty"`
-	Error        *ToolError       `json:"error,omitempty"`
+	Stop                *Endpoint        `json:"stop,omitempty"`
+	Lines               []LineDepartures `json:"lines,omitempty"`
+	SkippedLines        []LineRef        `json:"skipped_lines,omitempty"`
+	RealtimeUnavailable *ToolError       `json:"realtime_unavailable,omitempty"`
+	Error               *ToolError       `json:"error,omitempty"`
 }
 
-// SetError sets the result's error.
 func (o *DeparturesOutput) SetError(e *ToolError) { o.Error = e }
 
-// LineDepartures are the next departures of one line in one direction.
 type LineDepartures struct {
 	Line      string      `json:"line"`
 	Mode      string      `json:"mode,omitempty"`
@@ -60,7 +50,6 @@ type LineDepartures struct {
 	Error     *ToolError  `json:"error,omitempty"`
 }
 
-// Departure is one departure.
 type Departure struct {
 	Time        string  `json:"time"`
 	Minutes     int     `json:"minutes"`
@@ -70,14 +59,12 @@ type Departure struct {
 	Platform    *string `json:"platform"`
 }
 
-// LineRef names a line the server did not query.
 type LineRef struct {
 	Line   string `json:"line"`
 	Mode   string `json:"mode"`
 	LineID string `json:"line_id"`
 }
 
-// NextDepartures runs next_departures.
 func (s *Service) NextDepartures(ctx context.Context, in DeparturesInput) (*DeparturesOutput, error) {
 	out, err := s.nextDepartures(ctx, in)
 	if err != nil {
@@ -86,7 +73,7 @@ func (s *Service) NextDepartures(ctx context.Context, in DeparturesInput) (*Depa
 			return nil, callErr
 		}
 		if out == nil {
-			out = &DeparturesOutput{Stop: nil, Lines: nil, SkippedLines: nil, Error: nil}
+			out = &DeparturesOutput{Stop: nil, Lines: nil, SkippedLines: nil, RealtimeUnavailable: nil, Error: nil}
 		}
 		out.Error = te
 	}
@@ -99,7 +86,9 @@ func (s *Service) nextDepartures(ctx context.Context, in DeparturesInput) (*Depa
 	if err != nil {
 		return nil, err
 	}
-	out := &DeparturesOutput{Stop: stop.endpoint(), Lines: []LineDepartures{}, SkippedLines: nil, Error: nil}
+	out := &DeparturesOutput{
+		Stop: stop.endpoint(), Lines: []LineDepartures{}, SkippedLines: nil, RealtimeUnavailable: nil, Error: nil,
+	}
 	atStop, err := s.stopLines(ctx, stop.ID)
 	if err != nil {
 		return out, err
@@ -122,8 +111,9 @@ func (s *Service) nextDepartures(ctx context.Context, in DeparturesInput) (*Depa
 			}
 		}
 	}
+	rt := newRealtimeLookup(s)
 	for _, l := range selected {
-		groups, lerr := s.lineDepartures(ctx, &stop, &l, limit)
+		groups, lerr := s.lineDepartures(ctx, rt, &stop, &l, limit)
 		if lerr != nil {
 			if stopsCall(lerr) {
 				return nil, lerr
@@ -133,6 +123,7 @@ func (s *Service) nextDepartures(ctx context.Context, in DeparturesInput) (*Depa
 		}
 		out.Lines = append(out.Lines, groups...)
 	}
+	out.RealtimeUnavailable = rt.unavailable()
 	return out, nil
 }
 
@@ -142,8 +133,6 @@ func failedLine(name, mode, id string, te *ToolError) LineDepartures {
 	}
 }
 
-// departureStop resolves the stop parameter to a stop area: a station is
-// used as it is, another place stands for the nearest station.
 func (s *Service) departureStop(ctx context.Context, value string) (place, error) {
 	stop, err := s.resolvePlace(ctx, "stop", value)
 	if err != nil {
@@ -162,7 +151,6 @@ func (s *Service) departureStop(ctx context.Context, value string) (place, error
 	return near, nil
 }
 
-// stopLines are the lines that call at a stop area.
 func (s *Service) stopLines(ctx context.Context, stopArea string) ([]line, error) {
 	var resp linesResponse
 	err := s.prim.Navitia(ctx, "stop_areas/"+stopArea+"/lines", url.Values{
@@ -178,8 +166,7 @@ func (s *Service) stopLines(ctx context.Context, stopArea string) ([]line, error
 	return lines, nil
 }
 
-// defaultLines picks the lines to query when the client names none: up to 12,
-// by mode then number; the others are skipped.
+// defaultLines: rail first, up to MaxStopLines.
 func defaultLines(atStop []line) ([]line, []LineRef) {
 	sorted := slices.Clone(atStop)
 	slices.SortStableFunc(sorted, func(a, b line) int {
@@ -195,7 +182,6 @@ func defaultLines(atStop []line) ([]line, []LineRef) {
 	return selected, skipped
 }
 
-// pickStopLine resolves a line name or id among the lines of the stop.
 func pickStopLine(atStop []line, name string) (line, error) {
 	v := strings.TrimSpace(name)
 	if lineIDPattern.MatchString(v) {
@@ -216,19 +202,16 @@ func pickStopLine(atStop []line, name string) (line, error) {
 	return line{}, lineError(name, matches)
 }
 
-// lineDepartures are a line's next departures at a stop, by direction: from
-// SIRI, else from the timetable. Only an error that ends the call, or a
-// failed timetable request, is returned.
-func (s *Service) lineDepartures(ctx context.Context, stop *place, l *line, limit int) ([]LineDepartures, error) {
+// lineDepartures uses SIRI, falling back to the timetable.
+func (s *Service) lineDepartures(
+	ctx context.Context, rt *realtimeLookup, stop *place, l *line, limit int,
+) ([]LineDepartures, error) {
 	stopRef, ok1 := prim.SIRIStopRef(stop.ID)
 	lineRef, ok2 := prim.SIRILineRef(l.ID)
 	if ok1 && ok2 {
-		sm, err := s.prim.StopMonitoring(ctx, stopRef, lineRef)
-		switch {
-		case err != nil && stopsCall(err):
-			return nil, fmt.Errorf("ask SIRI for line %s at %s: %w", l.ID, stop.ID, err)
-		case err == nil:
-			if groups := s.realtimeGroups(sm.Visits(), l, limit); len(groups) > 0 {
+		visits, err := rt.visits(ctx, stopRef, lineRef)
+		if err == nil {
+			if groups := s.realtimeGroups(visits, l, limit); len(groups) > 0 {
 				return groups, nil
 			}
 		}
@@ -237,9 +220,8 @@ func (s *Service) lineDepartures(ctx context.Context, stop *place, l *line, limi
 }
 
 type groupedDeparture struct {
-	at  time.Time
-	dep Departure
-	// terminus names the departure's terminus in a direction made of termini.
+	at       time.Time
+	dep      Departure
 	terminus string
 }
 
@@ -248,7 +230,6 @@ type departureGroup struct {
 	departures     []groupedDeparture
 }
 
-// groups collects departures by key, keeping the order keys first appear in.
 type groups struct {
 	order []string
 	byKey map[string]*departureGroup
@@ -267,9 +248,8 @@ func (g *groups) add(key, direction string, d groupedDeparture) {
 	grp.departures = append(grp.departures, d)
 }
 
-// result turns the groups into one result per direction, each with at most
-// limit departures, the direction with the next departure first. A group
-// without a direction name is named by the termini of the departures listed.
+// result: one entry per direction, soonest first. Without a direction name,
+// use the termini of the departures shown.
 func (g *groups) result(l *line, realtime bool, limit int) []LineDepartures {
 	var out []LineDepartures
 	var firsts []time.Time
@@ -305,7 +285,6 @@ func (g *groups) result(l *line, realtime bool, limit int) []LineDepartures {
 	return sorted
 }
 
-// realtimeGroups groups SIRI departures by DirectionRef, else by destination.
 func (s *Service) realtimeGroups(visits []visit, l *line, limit int) []LineDepartures {
 	var g groups
 	now := s.now()
@@ -344,7 +323,6 @@ func (s *Service) realtimeGroups(visits []visit, l *line, limit int) []LineDepar
 	return g.result(l, true, limit)
 }
 
-// timetableGroups groups timetabled departures by route direction.
 func (s *Service) timetableGroups(ctx context.Context, stop *place, l *line, limit int) ([]LineDepartures, error) {
 	var resp departuresResponse
 	err := s.prim.Navitia(ctx, "stop_areas/"+stop.ID+"/departures", url.Values{
@@ -354,8 +332,7 @@ func (s *Service) timetableGroups(ctx context.Context, stop *place, l *line, lim
 		paramCount:          {strconv.Itoa(max(minTimetable, timetableMargin*limit))},
 		paramDisableGeoJSON: {valueTrue},
 	}, &resp)
-	// A stop and line without departure answer 200 with none (seen on
-	// 2026-11-18), or Navitia's own 404; a 404 without its body is a failure.
+	// No departures is a 200 with an empty list, or Navitia's own 404.
 	if err != nil && !navitiaNotFound(err) {
 		return nil, failure(err, "read the timetable of line %s at %s", l.ID, stop.ID)
 	}

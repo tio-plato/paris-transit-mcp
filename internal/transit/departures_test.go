@@ -14,8 +14,7 @@ const (
 	lineN151 = "line:IDFM:C01635"
 )
 
-// saintLazareEnv serves Gare Saint-Lazare: its lines, the J line's SIRI
-// recorded at 05:21, the N151 night bus's empty SIRI and its timetable.
+// saintLazareEnv: J has live data, the N151 night bus only a timetable.
 func saintLazareEnv(t *testing.T) *env {
 	t.Helper()
 	e := newEnv(t, at(t, "20261118T0521"))
@@ -63,7 +62,7 @@ func TestDeparturesAtATerminusListOnlyTrainsThatLeave(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Saint-Lazare is the J line's terminus: the trains towards it only arrive.
+	// Saint-Lazare is the J terminus: trains towards it only arrive.
 	if len(out.Lines) != 1 {
 		t.Fatalf("lines %+v, want the one direction that leaves Saint-Lazare", out.Lines)
 	}
@@ -80,9 +79,7 @@ func TestDeparturesAtATerminusListOnlyTrainsThatLeave(t *testing.T) {
 	if next[0].Time != "2026-11-18T05:31:00+01:00" || next[0].Destination != "Ermont - Eaubonne" {
 		t.Errorf("first departure %+v, want Ermont - Eaubonne at 05:31 Paris time", next[0])
 	}
-	// SIRI gives the J line no direction name: the direction names the termini
-	// of the departures listed, three to Ermont - Eaubonne and one to
-	// Boissy-l'Aillerie, not the five other termini later in the group.
+	// No DirectionName from SIRI: only the termini shown, not all seven.
 	if got := out.Lines[0].Direction; got != "Ermont - Eaubonne / Boissy-l'Aillerie" {
 		t.Errorf("direction %q, want Ermont - Eaubonne / Boissy-l'Aillerie", got)
 	}
@@ -105,7 +102,7 @@ func TestDeparturesWithoutLinesQueryTwelveRailFirst(t *testing.T) {
 	if len(asked) != transit.MaxStopLines {
 		t.Errorf("sent %d SIRI requests, want %d", len(asked), transit.MaxStopLines)
 	}
-	// The rail lines of Saint-Lazare: J, L, two TER Normandie lines, metro 3, 12, 13 and 14.
+	// J, L, two TER lines, metro 3, 12, 13, 14.
 	for _, rail := range []string{"C01739", "C01740", "C01748", "C02375", "C01373", "C01382", "C01383", "C01384"} {
 		if !slices.Contains(asked, "STIF:Line::"+rail+":") {
 			t.Errorf("no SIRI request for rail line %s", rail)
@@ -191,21 +188,38 @@ func TestDeparturesOfALineWhoseSIRIFailsComeFromTheTimetable(t *testing.T) {
 	}
 }
 
-func TestDeparturesStopAtTheQuota(t *testing.T) {
+func TestSIRIQuotaFallsBackToTheTimetableAndSaysSo(t *testing.T) {
 	t.Parallel()
 	e := saintLazareEnv(t)
 	e.fake.status(siri, http.StatusTooManyRequests)
 
-	_, err := e.svc.NextDepartures(t.Context(), departures("Gare Saint-Lazare", "J", "L", "N151"))
-
-	if err == nil || transit.AsToolError(err).Code != transit.CodeQuota {
-		t.Fatalf("error = %v, want quota", err)
+	out, err := e.svc.NextDepartures(t.Context(), departures("Gare Saint-Lazare", "J", "L", "N151"))
+	if err != nil {
+		t.Fatal(err)
 	}
+
 	if n := len(e.fake.requestsTo(siri)); n != 1 {
 		t.Errorf("sent %d SIRI requests after a 429, want 1", n)
 	}
-	if n := len(e.fake.requestsTo(navitia + "stop_areas/" + saintLazare + "/departures")); n != 0 {
-		t.Errorf("sent %d timetable requests after a 429", n)
+	if out.RealtimeUnavailable == nil || out.RealtimeUnavailable.Code != transit.CodeQuota {
+		t.Errorf("realtime_unavailable = %+v, want quota", out.RealtimeUnavailable)
+	}
+	for _, l := range out.Lines {
+		if l.Realtime || l.Error != nil {
+			t.Errorf("line %s: %+v, want timetable departures", l.LineID, l)
+		}
+	}
+}
+
+func TestNavitiaQuotaStillFailsTheCall(t *testing.T) {
+	t.Parallel()
+	e := saintLazareEnv(t)
+	e.fake.status(navitia+"stop_areas/"+saintLazare+"/departures", http.StatusTooManyRequests)
+
+	_, err := e.svc.NextDepartures(t.Context(), departures("Gare Saint-Lazare", "N151", "J"))
+
+	if err == nil || transit.AsToolError(err).Code != transit.CodeQuota {
+		t.Fatalf("error = %v, want quota", err)
 	}
 }
 
@@ -271,10 +285,9 @@ func TestEmptyTimetableIsNoDepartureButABodiless404IsAFailure(t *testing.T) {
 		body      string
 		wantError string
 	}{
-		// Navitia's answer for a stop and line without departure, seen on 2026-11-18.
+		// What Navitia returned on 2026-11-18.
 		{http.StatusOK, `{"departures": [], "pagination": {"total_result": 0}}`, ""},
 		{http.StatusNotFound, ``, transit.CodeUpstream},
-		// Navitia's own 404 says there is nothing; a 404 without its body is a failure.
 		{http.StatusNotFound, `{"error": {"id": "no_departure_this_day", "message": "no departure"}}`, ""},
 	} {
 		e := saintLazareEnv(t)

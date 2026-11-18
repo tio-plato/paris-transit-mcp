@@ -10,14 +10,11 @@ import (
 )
 
 const (
-	// realtimeHorizon is how far ahead a first leg may leave and still get
-	// realtime data: SIRI covers about the next three hours, and a later
-	// train's realtime would mostly be its timetable.
+	// realtimeHorizon: SIRI covers about 3 hours, and later trains are mostly
+	// timetable anyway.
 	realtimeHorizon = 90 * time.Minute
-	// catchable is how long before the timetabled departure a train may leave
-	// and still be caught on this journey.
-	catchable = 2 * time.Minute
-	// directionTrains is how many trains a match by direction lists.
+	// catchable: a train leaving up to 2 minutes early can still be caught.
+	catchable       = 2 * time.Minute
 	directionTrains = 3
 
 	statusCancelled = "cancelled"
@@ -27,10 +24,9 @@ const (
 
 type visit = prim.Visit
 
-// FirstLegRealtime is the realtime data matched to a journey's first ride.
 type FirstLegRealtime struct {
-	// Match is trip when SIRI has this very train, direction when it lists
-	// trains of the line towards the same terminus.
+	// Match is "trip" for this very train, "direction" for the next trains
+	// to the same terminus.
 	Match    string      `json:"match"`
 	Expected string      `json:"expected,omitempty"`
 	DelayMin *int        `json:"delay_min,omitempty"`
@@ -38,18 +34,20 @@ type FirstLegRealtime struct {
 	Next     []NextTrain `json:"next,omitempty"`
 }
 
-// NextTrain is a train of a match by direction.
 type NextTrain struct {
 	Time    string `json:"time"`
 	Minutes int    `json:"minutes"`
 	Status  string `json:"status"`
 }
 
-// realtimeLookup asks SIRI once per stop and line within a call, whatever
-// the answer: a failure is not retried for the next journey.
+// realtimeLookup asks SIRI at most once per stop and line in a call. After
+// an auth or quota error it stops asking: SIRI has its own quota, so the
+// rest of the call goes on with timetable times.
 type realtimeLookup struct {
-	s     *Service
-	cache map[string]lookup
+	s       *Service
+	cache   map[string]lookup
+	failed  error // the first failure, for realtime_unavailable
+	stopped bool
 }
 
 type lookup struct {
@@ -57,15 +55,26 @@ type lookup struct {
 	err    error
 }
 
+func newRealtimeLookup(s *Service) *realtimeLookup {
+	return &realtimeLookup{s: s, cache: map[string]lookup{}, failed: nil, stopped: false}
+}
+
 func (r *realtimeLookup) visits(ctx context.Context, stopRef, lineRef string) ([]visit, error) {
 	key := stopRef + " " + lineRef
 	if l, ok := r.cache[key]; ok {
 		return l.visits, l.err
 	}
+	if r.stopped {
+		return nil, r.failed
+	}
 	var l lookup
 	sm, err := r.s.prim.StopMonitoring(ctx, stopRef, lineRef)
 	if err != nil {
 		l.err = fmt.Errorf("ask SIRI for line %s at %s: %w", lineRef, stopRef, err)
+		if r.failed == nil {
+			r.failed = l.err
+		}
+		r.stopped = stopsCall(err)
 	} else {
 		l.visits = sm.Visits()
 	}
@@ -73,14 +82,26 @@ func (r *realtimeLookup) visits(ctx context.Context, stopRef, lineRef string) ([
 	return l.visits, l.err
 }
 
-// firstLeg matches realtime data to the journey's first public transport
-// ride when it leaves within 90 minutes. cancelled is true when the matched
-// train is cancelled. An error is returned only when it ends the call; a
-// failed SIRI request otherwise just leaves the journey without realtime.
-func (r *realtimeLookup) firstLeg(ctx context.Context, j *navJourney) (*FirstLegRealtime, bool, error) {
+// unavailable is the realtime_unavailable notice, or nil when SIRI answered.
+func (r *realtimeLookup) unavailable() *ToolError {
+	if r.failed == nil {
+		return nil
+	}
+	te := AsToolError(r.failed)
+	return &ToolError{
+		Code:       te.Code,
+		Message:    "live times are missing, timetable only: " + te.Message,
+		Candidates: nil,
+		cause:      r.failed,
+	}
+}
+
+// firstLeg matches realtime to the first ride if it leaves within 90 minutes.
+// cancelled is true when the matched train is cancelled.
+func (r *realtimeLookup) firstLeg(ctx context.Context, j *navJourney) (*FirstLegRealtime, bool) {
 	rides := j.publicTransport()
 	if len(rides) == 0 {
-		return nil, false, nil
+		return nil, false
 	}
 	sec := rides[0]
 	depValue := sec.BaseDepartureDateTime
@@ -89,30 +110,26 @@ func (r *realtimeLookup) firstLeg(ctx context.Context, j *navJourney) (*FirstLeg
 	}
 	dep, ok := r.s.parseNavitia(depValue)
 	if !ok || dep.Sub(r.s.now()) > realtimeHorizon || sec.DisplayInformations == nil {
-		return nil, false, nil
+		return nil, false
 	}
 	_, stopArea := stopOf(sec.From)
 	stopRef, ok1 := prim.SIRIStopRef(stopArea)
 	lineRef, ok2 := prim.SIRILineRef(sec.linkID("line"))
 	if !ok1 || !ok2 {
-		return nil, false, nil
+		return nil, false
 	}
 	visits, err := r.visits(ctx, stopRef, lineRef)
 	if err != nil {
-		if stopsCall(err) {
-			return nil, false, err
-		}
-		return nil, false, nil
+		return nil, false
 	}
 	di := sec.DisplayInformations
 	if m := r.byTrip(visits, di.TripShortName, dep); m != nil {
-		return m, m.Status == statusCancelled, nil
+		return m, m.Status == statusCancelled
 	}
-	return r.byDirection(visits, di.Direction, dep), false, nil
+	return r.byDirection(visits, di.Direction, dep), false
 }
 
-// byTrip finds the train whose number is trip and whose aimed departure is
-// the timetabled one, to the minute.
+// byTrip wants both the train number and the timetabled minute.
 func (r *realtimeLookup) byTrip(visits []visit, trip string, dep time.Time) *FirstLegRealtime {
 	if trip == "" {
 		return nil
@@ -137,8 +154,6 @@ func (r *realtimeLookup) byTrip(visits []visit, trip string, dep time.Time) *Fir
 	return nil
 }
 
-// byDirection lists the next trains towards the leg's terminus that leave no
-// earlier than two minutes before the timetabled departure.
 func (r *realtimeLookup) byDirection(visits []visit, direction string, dep time.Time) *FirstLegRealtime {
 	type train struct {
 		at     time.Time

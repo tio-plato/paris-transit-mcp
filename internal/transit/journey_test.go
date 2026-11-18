@@ -45,7 +45,6 @@ func TestWalkOnlyOriginIsReplacedByTheNearestStation(t *testing.T) {
 	if len(reqs) != 2 || reqs[1].Query.Get("from") != chateletLH || reqs[1].Query.Get("to") != laDefense {
 		t.Errorf("journeys requests %+v, want a second one from Châtelet - Les Halles to La Défense", reqs)
 	}
-	// Citymapper starts where the user is, not at the station chosen for PRIM.
 	link, err := url.Parse(out.Journeys[0].CitymapperURL)
 	if err != nil {
 		t.Fatal(err)
@@ -73,7 +72,6 @@ func TestWalkOnlyAfterSnappingIsNoTransitRoute(t *testing.T) {
 	if len(out.Journeys) != 0 {
 		t.Errorf("returned the walk %+v as an answer", out.Journeys)
 	}
-	// The message names the place the user asked for, and the station tried.
 	if m := out.Error.Message; !strings.Contains(m, forum) || !strings.Contains(m, "Châtelet - Les Halles") {
 		t.Errorf("message %q, want the asked %s and the station tried", m, forum)
 	}
@@ -98,9 +96,7 @@ func TestNoTransitRouteBetweenStationsClaimsNoSnap(t *testing.T) {
 	}
 }
 
-// rerB serves the Gare du Nord → Massy-Palaiseau journey, whose first ride is
-// train PLIC06 at 05:35, and the RER B departures at Gare du Nord recorded
-// with it.
+// rerB: Gare du Nord → Massy, first ride train PLIC06 at 05:35.
 func rerB(t *testing.T, siriFixture string) *env {
 	t.Helper()
 	e := newEnv(t, at(t, "20261118T0520"))
@@ -138,8 +134,7 @@ func TestFirstRideMatchesTheSameTrain(t *testing.T) {
 
 func TestTrainWithAnotherNumberIsNotMatchedByTimeAlone(t *testing.T) {
 	t.Parallel()
-	// In this copy PLIC06 is renamed ZZZZ06, and INCA07, which runs the other
-	// way to Mitry - Claye, is moved to 05:35, the minute of the leg.
+	// Edited copy: PLIC06 renamed, and INCA07 (other direction) moved to 05:35.
 	e := rerB(t, "20261118T0520-siri-gare-du-nord-rer-b-edited-trip-number.json")
 
 	out, err := e.svc.PlanJourney(t.Context(), plan("Gare du Nord", "Massy-Palaiseau"))
@@ -178,6 +173,35 @@ func TestFailedRealtimeLeavesTheJourney(t *testing.T) {
 	}
 	if rt := out.Journeys[0].FirstLegRealtime; rt != nil {
 		t.Errorf("first_leg_realtime = %+v, want null", rt)
+	}
+	if u := out.RealtimeUnavailable; u == nil || u.Code != transit.CodeUpstream {
+		t.Errorf("realtime_unavailable = %+v, want upstream", u)
+	}
+}
+
+func TestSIRIQuotaLeavesTheJourneysAndSaysSo(t *testing.T) {
+	t.Parallel()
+	e := gareDuNordNow(t, "")
+	e.fake.status(siri, http.StatusTooManyRequests)
+
+	out, err := e.svc.PlanJourney(t.Context(), plan("Gare du Nord", "Aéroport d'Orly"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if n := len(e.fake.requestsTo(siri)); n != 1 {
+		t.Errorf("sent %d SIRI requests, want 1", n)
+	}
+	if len(out.Journeys) != 2 {
+		t.Fatalf("journeys %+v, want both", out.Journeys)
+	}
+	for _, j := range out.Journeys {
+		if j.FirstLegRealtime != nil {
+			t.Errorf("first_leg_realtime = %+v, want null", j.FirstLegRealtime)
+		}
+	}
+	if u := out.RealtimeUnavailable; u == nil || u.Code != transit.CodeQuota {
+		t.Errorf("realtime_unavailable = %+v, want quota", u)
 	}
 }
 
@@ -255,8 +279,6 @@ func TestStepFreePutsBrokenLiftsLast(t *testing.T) {
 	for _, j := range out.Journeys {
 		kinds = append(kinds, j.Kind)
 	}
-	// No broken lift first, the fewer transfers first; the broken lift at the
-	// change of the best journey puts it last.
 	if len(kinds) != 3 || kinds[0] != "comfort" || kinds[1] != "fastest" || kinds[2] != "best" {
 		t.Errorf("order %v, want comfort, fastest, best", kinds)
 	}
@@ -314,18 +336,18 @@ func TestJourneyTimesAreParisTime(t *testing.T) {
 	}
 }
 
-// gareDuNordNow serves Gare du Nord → Orly asked at 05:57: RER D train 153602
-// then metro 14, or metro 4 then metro 14; and the SIRI of RER D and metro 4
-// at Gare du Nord recorded with it.
+// gareDuNordNow: Gare du Nord → Orly at 05:57, via RER D (train 153602) or metro 4.
 func gareDuNordNow(t *testing.T, rerD string) *env {
 	t.Helper()
 	e := newEnv(t, at(t, "20261118T0557"))
 	e.fake.places(t)
 	e.fake.file(t, navitia+"journeys", "20261118T0557-journey-gare-du-nord-orly-now.json")
-	e.fake.byQuery(t, siri, "LineRef", map[string]string{
-		"STIF:Line::C01728:": rerD,
-		"STIF:Line::C01374:": "20261118T0557-siri-gare-du-nord-m4.json",
-	})
+	if rerD != "" {
+		e.fake.byQuery(t, siri, "LineRef", map[string]string{
+			"STIF:Line::C01728:": rerD,
+			"STIF:Line::C01374:": "20261118T0557-siri-gare-du-nord-m4.json",
+		})
+	}
 	return e
 }
 
@@ -345,8 +367,7 @@ func TestMetroFirstRideMatchesTrainsToTheSameTerminus(t *testing.T) {
 	if rt == nil || rt.Match != "direction" {
 		t.Fatalf("metro 4: first_leg_realtime = %+v, want a match by direction", rt)
 	}
-	// The ride leaves at 06:00:30 towards Bagneux - Lucie Aubrac: the trains
-	// there from 05:58:30 on, none to Porte de Clignancourt.
+	// The ride leaves at 06:00:30 towards Bagneux.
 	want := []string{"2026-11-18T05:59:41+01:00", "2026-11-18T06:05:08+01:00", "2026-11-18T06:10:08+01:00"}
 	if len(rt.Next) != len(want) {
 		t.Fatalf("next = %+v, want %v", rt.Next, want)
@@ -360,7 +381,7 @@ func TestMetroFirstRideMatchesTrainsToTheSameTerminus(t *testing.T) {
 
 func TestJourneyWhoseFirstTrainIsCancelledGoesLast(t *testing.T) {
 	t.Parallel()
-	// In this copy train 153602, the RER D of the first journey, is cancelled.
+	// Edited copy: train 153602 cancelled.
 	e := gareDuNordNow(t, "20261118T0557-siri-gare-du-nord-rer-d-edited-cancelled.json")
 
 	out, err := e.svc.PlanJourney(t.Context(), plan("Gare du Nord", "Aéroport d'Orly"))
@@ -446,8 +467,7 @@ func TestLongWalkIsNotListedBesideTransit(t *testing.T) {
 	t.Parallel()
 	e := newEnv(t, at(t, "20261118T0521"))
 	e.fake.places(t)
-	// PRIM answers Châtelet - Les Halles → La Défense with RER A and a
-	// three-hour walk.
+	// RER A, plus a 3-hour walk.
 	e.fake.file(t, navitia+"journeys", "20261118T0521-journey-chatelet-la-defense.json")
 
 	out, err := e.svc.PlanJourney(t.Context(), plan("48.8617,2.3470", "La Défense"))
@@ -469,8 +489,7 @@ func TestEachBrokenLiftIsListedOnce(t *testing.T) {
 	t.Parallel()
 	e := newEnv(t, at(t, "20261118T0521"))
 	e.fake.places(t)
-	// PRIM republishes the same lift fault at La Défense dozens of times, each
-	// with its own end date.
+	// La Défense has dozens of copies of the same lift faults.
 	e.fake.file(t, navitia+"journeys", "20261118T0521-journey-chatelet-la-defense.json")
 
 	out, err := e.svc.PlanJourney(t.Context(), plan("48.8617,2.3470", "La Défense"))
@@ -509,7 +528,6 @@ func TestFailedRealtimeIsNotAskedAgainInTheSameCall(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The three first rides leave Gare du Nord on RER B: one request, no retry.
 	if n := len(e.fake.requestsTo(siri)); n != 1 {
 		t.Errorf("sent %d SIRI requests, want 1", n)
 	}
@@ -670,8 +688,7 @@ func TestDisruptionsOverBeforeTheJourneyAreLeftOut(t *testing.T) {
 func TestDisruptionsAreListedOnlyForTheTimeOfTheJourney(t *testing.T) {
 	t.Parallel()
 	e := newEnv(t, at(t, "20261118T0521"))
-	// The trip leaves at 18:00 tonight. Works next week say nothing of it; a
-	// strike whose periods PRIM does not give may well.
+	// Trip at 18:00 tonight; the strike has no periods.
 	nextWeek := `{"id": "next-week", "status": "future",
 		"severity": {"name": "perturbée", "effect": "SIGNIFICANT_DELAYS"},
 		"application_periods": [{"begin": "20261124T220000", "end": "20261125T050000"}],

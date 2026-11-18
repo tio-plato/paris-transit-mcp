@@ -12,8 +12,7 @@ import (
 )
 
 const (
-	// maxWalk is the longest walk-only trip the server gives as an answer: a
-	// longer one most likely comes from a place Navitia could not reach.
+	// maxWalk: a longer walk-only answer means Navitia couldn't reach the place.
 	maxWalk = 30 * time.Minute
 
 	profileStandard = "standard"
@@ -23,7 +22,6 @@ const (
 	representsArrival   = "arrival"
 )
 
-// JourneyInput is the input of plan_journey.
 type JourneyInput struct {
 	Origin             string `json:"origin"`
 	Destination        string `json:"destination"`
@@ -32,18 +30,16 @@ type JourneyInput struct {
 	Profile            string `json:"profile,omitempty"`
 }
 
-// JourneyOutput is the result of plan_journey.
 type JourneyOutput struct {
-	Origin      *Endpoint  `json:"origin,omitempty"`
-	Destination *Endpoint  `json:"destination,omitempty"`
-	Journeys    []Journey  `json:"journeys,omitempty"`
-	Error       *ToolError `json:"error,omitempty"`
+	Origin              *Endpoint  `json:"origin,omitempty"`
+	Destination         *Endpoint  `json:"destination,omitempty"`
+	Journeys            []Journey  `json:"journeys,omitempty"`
+	RealtimeUnavailable *ToolError `json:"realtime_unavailable,omitempty"`
+	Error               *ToolError `json:"error,omitempty"`
 }
 
-// SetError sets the result's error.
 func (o *JourneyOutput) SetError(e *ToolError) { o.Error = e }
 
-// Journey is one way to make the trip.
 type Journey struct {
 	Kind             string            `json:"kind"`
 	Departure        string            `json:"departure"`
@@ -57,7 +53,6 @@ type Journey struct {
 	CitymapperURL    string            `json:"citymapper_url"`
 }
 
-// Leg is one public transport ride of a journey.
 type Leg struct {
 	Mode      string `json:"mode"`
 	Line      string `json:"line"`
@@ -72,18 +67,15 @@ type Leg struct {
 	Stops     int    `json:"stops"`
 }
 
-// journeyQuery is a request to Navitia's journey planner.
 type journeyQuery struct {
 	from, to place
 	when     time.Time
 	arrival  bool
 	stepFree bool
-	// max is max_nb_journeys; zero leaves PRIM's default.
-	max int
+	max      int // max_nb_journeys, 0 for PRIM's default
 }
 
-// resultError splits an error into one the result carries (a query answer
-// such as not_found) and one that makes the call an MCP error.
+// resultError splits answers (not_found…) from MCP errors.
 func resultError(err error) (*ToolError, error) {
 	te := AsToolError(err)
 	if IsErrorCode(te.Code) {
@@ -92,7 +84,6 @@ func resultError(err error) (*ToolError, error) {
 	return te, nil
 }
 
-// PlanJourney runs plan_journey.
 func (s *Service) PlanJourney(ctx context.Context, in JourneyInput) (*JourneyOutput, error) {
 	out, err := s.planJourney(ctx, in)
 	if err != nil {
@@ -101,7 +92,7 @@ func (s *Service) PlanJourney(ctx context.Context, in JourneyInput) (*JourneyOut
 			return nil, callErr
 		}
 		if out == nil {
-			out = &JourneyOutput{Origin: nil, Destination: nil, Journeys: nil, Error: nil}
+			out = &JourneyOutput{Origin: nil, Destination: nil, Journeys: nil, RealtimeUnavailable: nil, Error: nil}
 		}
 		out.Error = te
 	}
@@ -119,13 +110,20 @@ func (s *Service) planJourney(ctx context.Context, in JourneyInput) (*JourneyOut
 	}
 	q.to, err = s.resolvePlace(ctx, "destination", in.Destination)
 	if err != nil {
-		return &JourneyOutput{Origin: q.from.endpoint(), Destination: nil, Journeys: nil, Error: nil}, err
+		return &JourneyOutput{
+			Origin:              q.from.endpoint(),
+			Destination:         nil,
+			Journeys:            nil,
+			RealtimeUnavailable: nil,
+			Error:               nil,
+		}, err
 	}
-	// Citymapper gets the places as asked, the user's own position included,
-	// even when PRIM is asked from a nearby station.
+	// Citymapper gets the places as asked, even if we snapped them.
 	asked := q
 	resp, err := s.journeys(ctx, &q)
-	out := &JourneyOutput{Origin: q.from.endpoint(), Destination: q.to.endpoint(), Journeys: nil, Error: nil}
+	out := &JourneyOutput{
+		Origin: q.from.endpoint(), Destination: q.to.endpoint(), Journeys: nil, RealtimeUnavailable: nil, Error: nil,
+	}
 	if err != nil {
 		return out, err
 	}
@@ -138,7 +136,7 @@ func (s *Service) planJourney(ctx context.Context, in JourneyInput) (*JourneyOut
 	for i := range resp.Disruptions {
 		disruptions[resp.Disruptions[i].ID] = &resp.Disruptions[i]
 	}
-	rt := realtimeLookup{s: s, cache: map[string]lookup{}}
+	rt := newRealtimeLookup(s)
 	type ranked struct {
 		journey   Journey
 		cancelled bool
@@ -146,15 +144,11 @@ func (s *Service) planJourney(ctx context.Context, in JourneyInput) (*JourneyOut
 	list := make([]ranked, 0, len(resp.Journeys))
 	for i := range resp.Journeys {
 		j := &resp.Journeys[i]
-		// PRIM may add a walk of hours beside public transport: it is no
-		// alternative, as the walk-only rule of journeys says.
+		// PRIM sometimes adds a 3-hour walk next to transit options.
 		if !answer(j) {
 			continue
 		}
-		first, cancelled, rtErr := rt.firstLeg(ctx, j)
-		if rtErr != nil {
-			return nil, rtErr
-		}
+		first, cancelled := rt.firstLeg(ctx, j)
 		list = append(list, ranked{
 			journey: Journey{
 				Kind:             j.Type,
@@ -171,8 +165,7 @@ func (s *Service) planJourney(ctx context.Context, in JourneyInput) (*JourneyOut
 			cancelled: cancelled,
 		})
 	}
-	// A journey whose first train is cancelled goes last; step-free journeys
-	// are ordered by the server, the others keep PRIM's order.
+	// Cancelled first train last; step_free sorted by us, standard keeps PRIM's order.
 	slices.SortStableFunc(list, func(a, b ranked) int {
 		if c := compareBool(a.cancelled, b.cancelled); c != 0 || !q.stepFree {
 			return c
@@ -188,10 +181,10 @@ func (s *Service) planJourney(ctx context.Context, in JourneyInput) (*JourneyOut
 	for _, r := range list {
 		out.Journeys = append(out.Journeys, r.journey)
 	}
+	out.RealtimeUnavailable = rt.unavailable()
 	return out, nil
 }
 
-// journeyOptions reads the time, its meaning and the profile of a journey.
 func (s *Service) journeyOptions(in JourneyInput) (journeyQuery, error) {
 	q := journeyQuery{from: place{}, to: place{}, when: s.now(), arrival: false, stepFree: false, max: 0}
 	switch in.DatetimeRepresents {
@@ -222,7 +215,6 @@ func (s *Service) journeyOptions(in JourneyInput) (journeyQuery, error) {
 	return q, nil
 }
 
-// compareBool orders false before true.
 func compareBool(a, b bool) int {
 	switch {
 	case a == b:
@@ -234,7 +226,6 @@ func compareBool(a, b bool) int {
 	}
 }
 
-// legs are the public transport rides of a journey.
 func (s *Service) legs(j *navJourney) []Leg {
 	out := []Leg{}
 	for _, sec := range j.publicTransport() {
@@ -261,7 +252,6 @@ func (s *Service) legs(j *navJourney) []Leg {
 	return out
 }
 
-// stopOf is the stop area name, without its town, and id of a section's end.
 func stopOf(p *navPlace) (string, string) {
 	if p == nil {
 		return "", ""
@@ -272,9 +262,8 @@ func stopOf(p *navPlace) (string, string) {
 	return stripTown(p.Name), p.ID
 }
 
-// journeys asks Navitia for journeys. When it finds only a long walk, it
-// replaces each end that is not a station by the nearest station within 500
-// metres and asks once more; q holds the replaced ends.
+// journeys retries once from the nearest stations when Navitia only finds a
+// long walk. q keeps the snapped ends.
 func (s *Service) journeys(ctx context.Context, q *journeyQuery) (*journeysResponse, error) {
 	resp, err := s.queryJourneys(ctx, q)
 	if err != nil {
@@ -315,13 +304,10 @@ func (s *Service) journeys(ctx context.Context, q *journeyQuery) (*journeysRespo
 	return nil, newError(CodeNoTransitRoute, "%s: tell the user PRIM found no public transport for this trip", message)
 }
 
-// answers reports whether a response answers the trip: it has a public
-// transport journey, or a walk short enough to be the answer.
 func answers(resp *journeysResponse) bool {
 	return firstAnswer(resp) != nil
 }
 
-// firstAnswer is the first journey that answers the trip, or nil.
 func firstAnswer(resp *journeysResponse) *navJourney {
 	for i := range resp.Journeys {
 		if answer(&resp.Journeys[i]) {
@@ -331,8 +317,7 @@ func firstAnswer(resp *journeysResponse) *navJourney {
 	return nil
 }
 
-// answer reports whether a journey answers the trip: it uses public
-// transport, or walks no longer than 30 minutes.
+// answer: uses transit, or walks at most 30 minutes.
 func answer(j *navJourney) bool {
 	return len(j.publicTransport()) > 0 || time.Duration(j.Duration)*time.Second <= maxWalk
 }
