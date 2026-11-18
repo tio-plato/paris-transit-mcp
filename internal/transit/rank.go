@@ -93,13 +93,20 @@ func (s *Service) rankDestinations(ctx context.Context, in RankInput) (*RankOutp
 		}
 		arriveBy[i] = t
 	}
-	origin, err := s.resolvePlace(ctx, "origin", in.Origin)
+	asked, err := s.resolvePlace(ctx, "origin", in.Origin)
 	if err != nil {
 		return nil, err
 	}
+	origin := asked
 	out := &RankOutput{Origin: origin.endpoint(), Ranked: []Ranked{}, Failed: []Failed{}, Error: nil}
 	for i, d := range in.Destinations {
-		r, oneErr := s.rankOne(ctx, origin, d, depart, arriveBy[i])
+		r, from, oneErr := s.rankOne(ctx, trip{asked: asked, from: origin}, d, depart, arriveBy[i])
+		// An origin replaced by a station for one destination stays replaced
+		// for the next ones, and the result says so.
+		if from.SnappedFrom != nil && origin.SnappedFrom == nil {
+			origin = from
+			out.Origin = origin.endpoint()
+		}
 		if oneErr != nil {
 			if stopsCall(oneErr) {
 				return nil, oneErr
@@ -119,22 +126,29 @@ func (s *Service) rankDestinations(ctx context.Context, in RankInput) (*RankOutp
 	return out, nil
 }
 
+// trip is the origin of a ranking: as asked, and as sent to PRIM, which may
+// be a station near it.
+type trip struct {
+	asked, from place
+}
+
 // rankOne plans the trip to one destination: PRIM's first journey, by
-// timetable, without realtime.
+// timetable, without realtime. It also returns the origin PRIM was asked
+// from.
 func (s *Service) rankOne(
-	ctx context.Context, origin place, d DestinationInput, depart, arriveBy time.Time,
-) (*Ranked, error) {
+	ctx context.Context, origin trip, d DestinationInput, depart, arriveBy time.Time,
+) (*Ranked, place, error) {
 	to, err := s.resolvePlace(ctx, "place", d.Place)
 	if err != nil {
-		return nil, err
+		return nil, origin.from, err
 	}
-	q := journeyQuery{from: origin, to: to, when: depart, arrival: false, stepFree: false, max: 1}
+	q := journeyQuery{from: origin.from, to: to, when: depart, arrival: false, stepFree: false, max: 1}
 	if !arriveBy.IsZero() {
 		q.when, q.arrival = arriveBy, true
 	}
 	resp, err := s.journeys(ctx, &q)
 	if err != nil {
-		return nil, err
+		return nil, q.from, err
 	}
 	j := firstAnswer(resp)
 	lines := []string{}
@@ -156,6 +170,6 @@ func (s *Service) rankOne(
 		Departure:     s.isoNavitia(j.DepartureDateTime),
 		Arrival:       s.isoNavitia(j.ArrivalDateTime),
 		Lines:         lines,
-		CitymapperURL: s.citymapperURL(&q.from.Resolved, &q.to.Resolved, arrival),
-	}, nil
+		CitymapperURL: s.citymapperURL(&origin.asked.Resolved, &to.Resolved, arrival),
+	}, q.from, nil
 }

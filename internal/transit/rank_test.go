@@ -2,6 +2,7 @@ package transit_test
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -176,5 +177,51 @@ func TestRankArrivesByEachDestinationsTime(t *testing.T) {
 	if len(reqs) != 1 || reqs[0].Query.Get("datetime_represents") != "arrival" ||
 		reqs[0].Query.Get("datetime") != "20261119T090000" {
 		t.Errorf("journeys requests %+v, want arrival at 20261119T090000", reqs)
+	}
+}
+
+func TestRankReplacesAWalkOnlyOriginOnceAndSaysSo(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, at(t, "20261118T0521"))
+	e.fake.places(t)
+	e.fake.file(t, navitia+"coords/*", "20261118T0521-nearby-forum-des-halles.json")
+	walk := readFixture(t, "20261118T0521-journey-forum-des-halles-la-defense.json")
+	viaRERA := readFixture(t, "20261118T0521-journey-chatelet-la-defense.json")
+	e.fake.handle(navitia+"journeys", func(w http.ResponseWriter, r *http.Request) {
+		// PRIM finds only a walk from the point inside the Forum des Halles.
+		if r.URL.Query().Get("from") == chateletLH {
+			writeJSON(w, http.StatusOK, string(viaRERA))
+			return
+		}
+		writeJSON(w, http.StatusOK, string(walk))
+	})
+
+	out, err := e.svc.RankDestinations(t.Context(), transit.RankInput{
+		Origin: forum,
+		Destinations: []transit.DestinationInput{
+			destination("one", "La Défense"), destination("two", "La Défense"), destination("three", "La Défense"),
+		},
+		DepartAt: "",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if n := len(e.fake.requestsTo(navitia + "coords/")); n != 1 {
+		t.Errorf("looked for a station near the origin %d times, want once", n)
+	}
+	o := out.Origin.Resolved
+	if o.ID != chateletLH || o.SnappedFrom == nil || o.SnappedFrom.Name != forum {
+		t.Errorf("origin %+v, want Châtelet - Les Halles, snapped from %s", o, forum)
+	}
+	if len(out.Ranked) != 3 {
+		t.Fatalf("ranked %+v, failed %+v, want three", out.Ranked, out.Failed)
+	}
+	link, err := url.Parse(out.Ranked[2].CitymapperURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := link.Query().Get("startcoord"); got != "48.8619,2.347" {
+		t.Errorf("startcoord %q, want the user's 48.8619,2.347", got)
 	}
 }
