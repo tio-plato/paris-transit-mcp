@@ -634,3 +634,35 @@ func TestLiftsAreListedOnlyWhereTheJourneyBoardsChangesOrAlights(t *testing.T) {
 		t.Errorf("equipment %+v, want only the lift at Gare du Nord, where the journey boards", equipment)
 	}
 }
+
+func TestDisruptionsOverBeforeTheJourneyAreLeftOut(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, at(t, "20261118T0521"))
+	// Works tonight only, and a lift due back tomorrow; the trip is next week.
+	works := `{"id": "tonight", "status": "future",
+		"severity": {"name": "perturbée", "effect": "SIGNIFICANT_DELAYS"},
+		"application_periods": [{"begin": "20261118T220000", "end": "20261119T050000"}],
+		"messages": [{"text": "RER B : travaux cette nuit", "channel": {"content_type": "text/plain", "types": ["title"]}}],
+		"impacted_objects": [{"pt_object": {"id": "line:IDFM:C01743", "embedded_type": "line"}}]}`
+	lift := strings.Replace(liftOutage("lift", gareDuNord), "20270101T000000", "20261119T120000", 1)
+	journeys := journeysJSON(t, []handJourney{{kind: "best", transfers: 0, walking: 0, durationS: 1800, rides: []ride{
+		{
+			from:        gareDuNord,
+			to:          massy,
+			dep:         "20261124T230000",
+			code:        "B",
+			trip:        "",
+			disruptions: []string{"tonight", "lift"},
+		},
+	}}}, `[`+works+`,`+lift+`]`)
+	e.fake.handle(navitia+"journeys", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, 200, journeys) })
+
+	out, err := e.svc.PlanJourney(t.Context(), plan("48.8809,2.3556", "48.7250,2.2590"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if d := out.Journeys[0].Disruptions; len(d.Service) != 0 || len(d.Equipment) != 0 {
+		t.Errorf("disruptions %+v, want none: both end before the journey", d)
+	}
+}

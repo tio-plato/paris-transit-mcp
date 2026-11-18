@@ -164,35 +164,39 @@ func (s *Service) journeyDisruptions(j *navJourney, all map[string]*navDisruptio
 	}
 	// PRIM republishes the same lift fault many times, each with its own end:
 	// it is listed once, until the latest end.
-	lifts := map[string]int{}
-	var liftEnds []time.Time
+	type lift struct {
+		index int
+		end   time.Time
+	}
+	lifts := map[string]lift{}
 	for _, ld := range linkedDisruptions(j, all) {
 		d := ld.d
-		p, ok := s.periodAt(d, at)
-		var from, until string
-		if ok {
-			from, until = s.iso(p.begin), s.iso(p.end)
+		p, inForce := s.periodAt(d, at)
+		if !inForce {
+			// Over before the journey: nothing to tell about this trip.
+			continue
 		}
 		switch {
 		case d.equipment():
-			stop, at := firstStop(d, stops)
-			if !at {
+			stop, found := firstStop(d, stops)
+			if !found {
 				continue
 			}
-			e := EquipmentDisruption{Stop: stop, Title: d.title(), Text: d.text(), Until: until}
+			e := EquipmentDisruption{Stop: stop, Title: d.title(), Text: d.text(), Until: s.iso(p.end)}
 			key := e.Stop + "\x00" + e.Title + "\x00" + e.Text
-			if i, dup := lifts[key]; dup {
-				if ok && p.end.After(liftEnds[i]) {
-					out.Equipment[i].Until, liftEnds[i] = until, p.end
+			if l, dup := lifts[key]; dup {
+				if p.end.After(l.end) {
+					out.Equipment[l.index].Until = e.Until
+					lifts[key] = lift{index: l.index, end: p.end}
 				}
 				continue
 			}
-			lifts[key] = len(out.Equipment)
+			lifts[key] = lift{index: len(out.Equipment), end: p.end}
 			out.Equipment = append(out.Equipment, e)
-			liftEnds = append(liftEnds, p.end)
 		case !d.silent():
 			out.Service = append(out.Service, ServiceDisruption{
-				Lines: ld.lines, Status: d.Status, Title: d.title(), Text: d.text(), From: from, Until: until,
+				Lines: ld.lines, Status: d.Status, Title: d.title(), Text: d.text(),
+				From: s.iso(p.begin), Until: s.iso(p.end),
 			})
 		}
 	}
