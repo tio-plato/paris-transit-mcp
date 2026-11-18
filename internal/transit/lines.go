@@ -2,6 +2,7 @@ package transit
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"net/url"
 	"regexp"
@@ -264,7 +265,7 @@ func (s *Service) resolveLine(ctx context.Context, name string) (line, error) {
 			if AsToolError(err).Code == CodeNotFound {
 				return line{}, newError(CodeNotFound, "line %q: no such line", name)
 			}
-			return line{}, err
+			return line{}, fmt.Errorf("look up line %q: %w", name, err)
 		}
 		if len(resp.Lines) == 0 {
 			return line{}, newError(CodeNotFound, "line %q: no such line", name)
@@ -283,7 +284,7 @@ func (s *Service) resolveLine(ctx context.Context, name string) (line, error) {
 		if AsToolError(err).Code == CodeNotFound {
 			return line{}, lineError(name, nil)
 		}
-		return line{}, err
+		return line{}, fmt.Errorf("search line %q: %w", name, err)
 	}
 	lines := make([]line, 0, len(resp.PtObjects))
 	for i := range resp.PtObjects {

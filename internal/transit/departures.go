@@ -3,6 +3,7 @@ package transit
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"net/url"
 	"slices"
 	"strconv"
@@ -165,7 +166,7 @@ func (s *Service) stopLines(ctx context.Context, stopArea string) ([]line, error
 		paramCount: {strconv.Itoa(maxStopLinesListed)}, "depth": {"1"}, paramDisableGeoJSON: {valueTrue},
 	}, &resp)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list the lines of %s: %w", stopArea, err)
 	}
 	lines := make([]line, 0, len(resp.Lines))
 	for i := range resp.Lines {
@@ -222,7 +223,7 @@ func (s *Service) lineDepartures(ctx context.Context, stop *place, l *line, limi
 		sm, err := s.prim.StopMonitoring(ctx, stopRef, lineRef)
 		switch {
 		case err != nil && stopsCall(err):
-			return nil, err
+			return nil, fmt.Errorf("ask SIRI for line %s at %s: %w", l.ID, stop.ID, err)
 		case err == nil:
 			if groups := s.realtimeGroups(sm.Visits(), l, limit); len(groups) > 0 {
 				return groups, nil
@@ -351,7 +352,7 @@ func (s *Service) timetableGroups(ctx context.Context, stop *place, l *line, lim
 		paramDisableGeoJSON: {valueTrue},
 	}, &resp)
 	if err != nil && !noDeparture(err) {
-		return nil, err
+		return nil, fmt.Errorf("read the timetable of line %s at %s: %w", l.ID, stop.ID, err)
 	}
 	var g groups
 	for _, d := range resp.Departures {

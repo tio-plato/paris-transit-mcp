@@ -31,12 +31,12 @@ func run() error {
 
 	token, err := prim.TokenFromEnv(os.Getenv)
 	if err != nil {
-		return err
+		return fmt.Errorf("read the PRIM token: %w", err)
 	}
 	client := prim.New(prim.Config{BaseURL: prim.DefaultBaseURL, Token: token, Timeout: 0, Rate: 0})
 	svc, err := transit.New(client, time.Now)
 	if err != nil {
-		return err
+		return fmt.Errorf("start the tools: %w", err)
 	}
 	server, err := newServer(svc, version())
 	if err != nil {

@@ -68,7 +68,8 @@ func AsToolError(err error) *ToolError {
 	}
 	var pe *prim.Error
 	if errors.As(err, &pe) {
-		return &ToolError{Code: pe.Code, Message: pe.Message, Candidates: nil}
+		// The whole chain says what the tool was doing when PRIM failed.
+		return &ToolError{Code: pe.Code, Message: err.Error(), Candidates: nil}
 	}
 	return &ToolError{Code: CodeUpstream, Message: err.Error(), Candidates: nil}
 }

@@ -2,6 +2,7 @@ package transit
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -94,7 +95,7 @@ func (s *Service) placeByID(ctx context.Context, name, id string) (place, error)
 		if AsToolError(err).Code == CodeNotFound {
 			return place{}, newError(CodeNotFound, "%s %q: no such place", name, id)
 		}
-		return place{}, err
+		return place{}, fmt.Errorf("look up %s %q: %w", name, id, err)
 	}
 	if len(resp.Places) == 0 {
 		return place{}, newError(CodeNotFound, "%s %q: no such place", name, id)
@@ -109,7 +110,7 @@ func (s *Service) placeByText(ctx context.Context, name, text string) (place, er
 		if AsToolError(err).Code == CodeNotFound {
 			return place{}, newError(CodeNotFound, "%s %q: no place found", name, text)
 		}
-		return place{}, err
+		return place{}, fmt.Errorf("search %s %q: %w", name, text, err)
 	}
 	if len(resp.Places) == 0 {
 		return place{}, newError(CodeNotFound, "%s %q: no place found", name, text)
@@ -201,7 +202,7 @@ func (s *Service) snap(ctx context.Context, p place) (place, bool, error) {
 		if AsToolError(err).Code == CodeNotFound {
 			return place{}, false, nil
 		}
-		return place{}, false, err
+		return place{}, false, fmt.Errorf("find a station near %q: %w", p.Name, err)
 	}
 	for i := range resp.PlacesNearby {
 		near := &resp.PlacesNearby[i]
@@ -225,7 +226,7 @@ func (s *Service) stopArea(ctx context.Context, p place) (place, error) {
 	var resp placesResponse
 	err := s.prim.Navitia(ctx, "places/"+p.ID, nil, &resp)
 	if err != nil {
-		return place{}, err
+		return place{}, fmt.Errorf("look up the stop area of %q: %w", p.ID, err)
 	}
 	if len(resp.Places) == 0 || resp.Places[0].StopPoint == nil || resp.Places[0].StopPoint.StopArea == nil {
 		return place{}, newError(CodeNotFound, "stop point %q belongs to no stop area", p.ID)

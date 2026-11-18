@@ -2,6 +2,7 @@ package transit
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"time"
 
@@ -64,7 +65,7 @@ func (r *realtimeLookup) visits(ctx context.Context, stopRef, lineRef string) ([
 	var l lookup
 	sm, err := r.s.prim.StopMonitoring(ctx, stopRef, lineRef)
 	if err != nil {
-		l.err = err
+		l.err = fmt.Errorf("ask SIRI for line %s at %s: %w", lineRef, stopRef, err)
 	} else {
 		l.visits = sm.Visits()
 	}

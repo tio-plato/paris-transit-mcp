@@ -361,7 +361,7 @@ func (s *Service) queryJourneys(ctx context.Context, q *journeyQuery) (*journeys
 	if err != nil {
 		te := AsToolError(err)
 		if te.Code != CodeNotFound {
-			return nil, err
+			return nil, fmt.Errorf("plan journeys from %q to %q: %w", q.from.Name, q.to.Name, err)
 		}
 		if navitiaErrorID(err) == "no_solution" {
 			return &journeysResponse{Journeys: nil, Disruptions: nil}, nil

@@ -2,6 +2,7 @@ package transit
 
 import (
 	"context"
+	"fmt"
 	"slices"
 )
 
@@ -93,7 +94,7 @@ func (s *Service) lineStatus(ctx context.Context, name string, days int) (*LineS
 	// A line without disruption answers 200; a 404 is never "all clear".
 	err = s.prim.Navitia(ctx, "line_reports/lines/"+l.ID+"/line_reports", nil, &resp)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read the line reports of %s: %w", l.ID, err)
 	}
 	out := &LineStatus{Line: l.label(), LineID: l.ID, Active: []Report{}, Upcoming: []Report{}, Error: nil}
 	now := s.now()
