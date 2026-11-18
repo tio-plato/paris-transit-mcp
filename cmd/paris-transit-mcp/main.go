@@ -43,7 +43,8 @@ func run() error {
 		return err
 	}
 	err = server.Run(ctx, &mcp.StdioTransport{})
-	if err != nil {
+	// SIGINT or SIGTERM is how a client stops the server: no failure.
+	if err != nil && ctx.Err() == nil {
 		return fmt.Errorf("serve MCP over stdio: %w", err)
 	}
 	return nil
