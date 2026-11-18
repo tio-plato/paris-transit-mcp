@@ -264,18 +264,21 @@ func TestDeparturesGroupByDirectionAndKeepCancelledTrains(t *testing.T) {
 	}
 }
 
-func TestTimetableNotFoundIsAnErrorUnlessNavitiaSaysNoDeparture(t *testing.T) {
+func TestEmptyTimetableIsNoDepartureButA404IsAFailure(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
+		status    int
 		body      string
-		wantError bool
+		wantError string
 	}{
-		{``, true}, // a gateway 404, no Navitia body
-		{`{"error": {"id": "no_departure_this_day", "message": "no departure"}}`, false},
+		// Navitia's answer for a stop and line without departure, seen on 2026-11-18.
+		{http.StatusOK, `{"departures": [], "pagination": {"total_result": 0}}`, ""},
+		{http.StatusNotFound, ``, transit.CodeUpstream},
+		{http.StatusNotFound, `{"error": {"id": "no_departure_this_day", "message": "no departure"}}`, transit.CodeUpstream},
 	} {
 		e := saintLazareEnv(t)
 		e.fake.handle(navitia+"stop_areas/"+saintLazare+"/departures", func(w http.ResponseWriter, _ *http.Request) {
-			writeJSON(w, http.StatusNotFound, tc.body)
+			writeJSON(w, tc.status, tc.body)
 		})
 
 		out, err := e.svc.NextDepartures(t.Context(), departures("Gare Saint-Lazare", "N151"))
@@ -283,8 +286,16 @@ func TestTimetableNotFoundIsAnErrorUnlessNavitiaSaysNoDeparture(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if len(out.Lines) != 1 || (out.Lines[0].Error != nil) != tc.wantError {
-			t.Errorf("404 %q: lines %+v, want error %v", tc.body, out.Lines, tc.wantError)
+		if len(out.Lines) != 1 {
+			t.Fatalf("%d %q: lines %+v, want one", tc.status, tc.body, out.Lines)
+		}
+		l := out.Lines[0]
+		got := ""
+		if l.Error != nil {
+			got = l.Error.Code
+		}
+		if got != tc.wantError || l.Realtime || len(l.Next) != 0 {
+			t.Errorf("%d %q: line %+v, want error %q and no departure", tc.status, tc.body, l, tc.wantError)
 		}
 	}
 }

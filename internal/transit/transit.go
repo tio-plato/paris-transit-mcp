@@ -74,6 +74,16 @@ func AsToolError(err error) *ToolError {
 	return &ToolError{Code: CodeUpstream, Message: err.Error(), Candidates: nil}
 }
 
+// failure wraps err from a request about a stop or line already resolved:
+// there, a 404 is PRIM failing, not an answer that the thing does not exist.
+func failure(err error, format string, args ...any) error {
+	what := fmt.Sprintf(format, args...)
+	if te := AsToolError(err); te.Code == CodeNotFound {
+		return &ToolError{Code: CodeUpstream, Message: what + ": " + te.Message, Candidates: nil}
+	}
+	return fmt.Errorf("%s: %w", what, err)
+}
+
 // navitiaErrorID is the id of the Navitia error body behind err, such as no_solution.
 func navitiaErrorID(err error) string {
 	var pe *prim.Error

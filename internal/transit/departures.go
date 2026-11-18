@@ -166,7 +166,7 @@ func (s *Service) stopLines(ctx context.Context, stopArea string) ([]line, error
 		paramCount: {strconv.Itoa(maxStopLinesListed)}, "depth": {"1"}, paramDisableGeoJSON: {valueTrue},
 	}, &resp)
 	if err != nil {
-		return nil, fmt.Errorf("list the lines of %s: %w", stopArea, err)
+		return nil, failure(err, "list the lines of %s", stopArea)
 	}
 	lines := make([]line, 0, len(resp.Lines))
 	for i := range resp.Lines {
@@ -351,8 +351,10 @@ func (s *Service) timetableGroups(ctx context.Context, stop *place, l *line, lim
 		paramCount:          {strconv.Itoa(max(minTimetable, timetableMargin*limit))},
 		paramDisableGeoJSON: {valueTrue},
 	}, &resp)
-	if err != nil && !noDeparture(err) {
-		return nil, fmt.Errorf("read the timetable of line %s at %s: %w", l.ID, stop.ID, err)
+	// A stop and line without departure answer 200 with none (seen on
+	// 2026-11-18): an error is a failure.
+	if err != nil {
+		return nil, failure(err, "read the timetable of line %s at %s", l.ID, stop.ID)
 	}
 	var g groups
 	for _, d := range resp.Departures {
@@ -373,18 +375,6 @@ func (s *Service) timetableGroups(ctx context.Context, stop *place, l *line, lim
 		}}
 	}
 	return result, nil
-}
-
-// noDeparture reports whether err is Navitia saying the stop has no departure
-// to give, as opposed to a failure.
-func noDeparture(err error) bool {
-	switch navitiaErrorID(err) {
-	case "no_departure_this_day", "no_active_circulation_this_day", "terminus", "partial_terminus",
-		"active_disruption":
-		return true
-	default:
-		return false
-	}
 }
 
 func nonEmpty(s string) *string {

@@ -120,16 +120,14 @@ func TestDisruptionTitleKeepsItsArrowAndTextLosesItsHTML(t *testing.T) {
 func TestLineReportsNotFoundIsAnErrorNotAllClear(t *testing.T) {
 	t.Parallel()
 	e := linesEnv(t)
-	// A gateway 404 has no Navitia body; a line with no disruption answers 200.
+	// A line with no disruption answers 200: a 404 for a line just resolved
+	// is a failure, and with every line failing, the call fails.
 	e.fake.status(navitia+"line_reports/*", http.StatusNotFound)
 
 	out, err := e.svc.LineStatus(t.Context(), status("RER B"))
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	if len(out.Lines) != 1 || out.Lines[0].Error == nil {
-		t.Errorf("lines %+v, want an error rather than no disruption", out.Lines)
+	if err == nil || transit.AsToolError(err).Code != transit.CodeUpstream {
+		t.Errorf("result %+v, error %v, want upstream rather than no disruption or not_found", out, err)
 	}
 }
 
