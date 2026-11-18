@@ -433,3 +433,30 @@ func TestLongWalkIsNotListedBesideTransit(t *testing.T) {
 		t.Errorf("journeys %+v, want RER A alone", out.Journeys)
 	}
 }
+
+func TestEachBrokenLiftIsListedOnce(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, at(t, "20261118T0521"))
+	e.fake.places(t)
+	// PRIM republishes the same lift fault at La Défense dozens of times, each
+	// with its own end date.
+	e.fake.file(t, navitia+"journeys", "20261118T0521-journey-chatelet-la-defense.json")
+
+	out, err := e.svc.PlanJourney(t.Context(), plan("48.8617,2.3470", "La Défense"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	seen := map[string]bool{}
+	equipment := out.Journeys[0].Disruptions.Equipment
+	for _, d := range equipment {
+		key := d.Stop + "|" + d.Title + "|" + d.Text
+		if seen[key] {
+			t.Errorf("lift listed twice: %s: %s", d.Stop, d.Text)
+		}
+		seen[key] = true
+	}
+	if len(equipment) == 0 {
+		t.Error("no broken lift listed")
+	}
+}
