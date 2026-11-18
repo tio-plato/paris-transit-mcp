@@ -145,3 +145,8 @@ nix flake check   # build, tests, golangci-lint
 ```
 
 Tests replay recorded PRIM responses from a local fake server; they never reach PRIM.
+
+## License
+
+The code is under the [MIT License](LICENSE). The PRIM responses recorded in `testdata/` are Île-de-France
+Mobilités data and are not covered by it: [`testdata/NOTICE`](testdata/NOTICE) gives their source and licences.
