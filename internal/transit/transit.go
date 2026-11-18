@@ -40,9 +40,15 @@ type ToolError struct {
 	Code       string      `json:"code"`
 	Message    string      `json:"message"`
 	Candidates []Candidate `json:"candidates,omitempty"`
+
+	// cause is the error the server read this one from, if any.
+	cause error
 }
 
 func (e *ToolError) Error() string { return e.Message }
+
+// Unwrap returns the error the tool error was read from.
+func (e *ToolError) Unwrap() error { return e.cause }
 
 // Candidate is a choice offered with ambiguous_place (id, name, type, town,
 // lat, lon) or ambiguous_line (line_id, line, mode, network).
@@ -74,14 +80,26 @@ func AsToolError(err error) *ToolError {
 	return &ToolError{Code: CodeUpstream, Message: err.Error(), Candidates: nil}
 }
 
-// failure wraps err from a request about a stop or line already resolved:
-// there, a 404 is PRIM failing, not an answer that the thing does not exist.
+// failure wraps err from a request about a stop or line already resolved.
+// A 404 that carries Navitia's error body is Navitia's answer that it has
+// nothing; one without it comes from the gateway: PRIM failing, not an
+// answer that the thing does not exist.
 func failure(err error, format string, args ...any) error {
 	what := fmt.Sprintf(format, args...)
-	if te := AsToolError(err); te.Code == CodeNotFound {
-		return &ToolError{Code: CodeUpstream, Message: what + ": " + te.Message, Candidates: nil}
+	if gatewayNotFound(err) {
+		return &ToolError{Code: CodeUpstream, Message: what + ": " + err.Error(), Candidates: nil, cause: err}
 	}
 	return fmt.Errorf("%s: %w", what, err)
+}
+
+// navitiaNotFound reports whether err is Navitia's own 404, with its error body.
+func navitiaNotFound(err error) bool {
+	return AsToolError(err).Code == CodeNotFound && navitiaErrorID(err) != ""
+}
+
+// gatewayNotFound reports whether err is a 404 without Navitia's error body.
+func gatewayNotFound(err error) bool {
+	return AsToolError(err).Code == CodeNotFound && navitiaErrorID(err) == ""
 }
 
 // navitiaErrorID is the id of the Navitia error body behind err, such as no_solution.

@@ -104,6 +104,9 @@ func (s *Service) nextDepartures(ctx context.Context, in DeparturesInput) (*Depa
 	if err != nil {
 		return out, err
 	}
+	if len(atStop) == 0 {
+		return out, newError(CodeNotFound, "no line calls at %s", stop.Name)
+	}
 	var selected []line
 	if len(in.Lines) == 0 {
 		selected, out.SkippedLines = defaultLines(atStop)
@@ -165,7 +168,7 @@ func (s *Service) stopLines(ctx context.Context, stopArea string) ([]line, error
 	err := s.prim.Navitia(ctx, "stop_areas/"+stopArea+"/lines", url.Values{
 		paramCount: {strconv.Itoa(maxStopLinesListed)}, "depth": {"1"}, paramDisableGeoJSON: {valueTrue},
 	}, &resp)
-	if err != nil {
+	if err != nil && !navitiaNotFound(err) {
 		return nil, failure(err, "list the lines of %s", stopArea)
 	}
 	lines := make([]line, 0, len(resp.Lines))
@@ -352,8 +355,8 @@ func (s *Service) timetableGroups(ctx context.Context, stop *place, l *line, lim
 		paramDisableGeoJSON: {valueTrue},
 	}, &resp)
 	// A stop and line without departure answer 200 with none (seen on
-	// 2026-11-18): an error is a failure.
-	if err != nil {
+	// 2026-11-18), or Navitia's own 404; a 404 without its body is a failure.
+	if err != nil && !navitiaNotFound(err) {
 		return nil, failure(err, "read the timetable of line %s at %s", l.ID, stop.ID)
 	}
 	var g groups

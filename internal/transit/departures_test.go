@@ -264,7 +264,7 @@ func TestDeparturesGroupByDirectionAndKeepCancelledTrains(t *testing.T) {
 	}
 }
 
-func TestEmptyTimetableIsNoDepartureButA404IsAFailure(t *testing.T) {
+func TestEmptyTimetableIsNoDepartureButABodiless404IsAFailure(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		status    int
@@ -274,7 +274,8 @@ func TestEmptyTimetableIsNoDepartureButA404IsAFailure(t *testing.T) {
 		// Navitia's answer for a stop and line without departure, seen on 2026-11-18.
 		{http.StatusOK, `{"departures": [], "pagination": {"total_result": 0}}`, ""},
 		{http.StatusNotFound, ``, transit.CodeUpstream},
-		{http.StatusNotFound, `{"error": {"id": "no_departure_this_day", "message": "no departure"}}`, transit.CodeUpstream},
+		// Navitia's own 404 says there is nothing; a 404 without its body is a failure.
+		{http.StatusNotFound, `{"error": {"id": "no_departure_this_day", "message": "no departure"}}`, ""},
 	} {
 		e := saintLazareEnv(t)
 		e.fake.handle(navitia+"stop_areas/"+saintLazare+"/departures", func(w http.ResponseWriter, _ *http.Request) {
