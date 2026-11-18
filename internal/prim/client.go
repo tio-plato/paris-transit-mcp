@@ -76,6 +76,12 @@ func TokenFromEnv(getenv func(string) string) (string, error) {
 	if token == "" {
 		return "", fmt.Errorf("environment variable %s is not set", TokenVariable)
 	}
+	// An MCP client passes a ${VAR} reference as it is when VAR is unset in
+	// its own environment.
+	if strings.HasPrefix(token, "${") {
+		return "", fmt.Errorf("environment variable %s holds the unexpanded reference %s: "+
+			"set the variable in the environment of the MCP client", TokenVariable, token)
+	}
 	return token, nil
 }
 

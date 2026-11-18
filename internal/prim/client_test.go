@@ -79,3 +79,12 @@ func TestNavitiaIDsToSIRIRefs(t *testing.T) {
 		t.Errorf("SIRILineRef = %q, %v", line, ok)
 	}
 }
+
+func TestTokenFromEnvRefusesAnUnexpandedReference(t *testing.T) {
+	t.Parallel()
+	// A client that cannot expand ${PRIM_API_KEY} passes the reference as it is.
+	_, err := prim.TokenFromEnv(func(string) string { return "${PRIM_API_KEY}" })
+	if err == nil {
+		t.Fatal("no error for an unexpanded ${PRIM_API_KEY}")
+	}
+}
