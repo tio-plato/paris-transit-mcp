@@ -1,0 +1,36 @@
+Test fixtures: responses of Île-de-France Mobilités' PRIM APIs
+================================================================
+
+The .json files in this directory are response bodies of the PRIM platform of Île-de-France Mobilités
+(https://prim.iledefrance-mobilites.fr), recorded on 2026-11-18 for the tests. Each file name starts with the
+time of the recording, in Paris time; the tests set their clock to it.
+
+The queries name only stations and public places: Gare du Nord, Gare Saint-Lazare, Châtelet - Les Halles,
+La Défense, Massy - Palaiseau, Orly airport, a point inside the Forum des Halles (48.8619, 2.3470), and the
+public names "Victor Hugo" and "12 rue Victor Hugo". Only response bodies were kept, no request header.
+
+Source: Île-de-France Mobilités, PRIM. These data are not covered by the licence of the code. They are reused
+under the licences of the APIs they come from, as the PRIM pages of these APIs stated them on 2026-11-18:
+
+- Île-de-France Mobilités Calculator - Generic access (v2), the Navitia journey planner
+  (places, places_nearby, journeys, pt_objects, lines, departures):
+  https://prim.iledefrance-mobilites.fr/en/apis/idfm-navitia-general-v2
+  Licence: Mobility License (Licence Mobilités).
+
+- Île-de-France Mobilités Calculator - Traffic Info Messages (v2) (line_reports):
+  https://prim.iledefrance-mobilites.fr/en/apis/idfm-navitia-line_reports-v2
+  Licence: Mobility License (Licence Mobilités).
+
+- Next Departures (Île-de-France Mobilités platform) - unitary request (stop-monitoring, SIRI Lite):
+  https://prim.iledefrance-mobilites.fr/en/apis/idfm-ivtr-requete_unitaire
+  The page lists the Mobility License in its details, and its "API Terms of Use and Data License" section
+  says the data are under the Open Database License (ODbL).
+
+Hand-edited copies
+------------------
+
+Files with "edited" in their name are recorded responses changed by hand for a test:
+
+- 20261118T0520-siri-gare-du-nord-rer-b-edited-trip-number.json: a copy of
+  20261118T0520-siri-gare-du-nord-rer-b.json where train PLIC06 is renamed ZZZZ06, and train INCA07, which
+  runs the other way to Mitry - Claye, leaves at 04:35 UTC instead of 04:36, the minute of PLIC06.
