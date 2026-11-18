@@ -115,12 +115,11 @@ func (s *Service) periods(d *navDisruption) []period {
 	return out
 }
 
-// current returns the period in force at now, else the next one; ok is false
-// when every period has ended.
-func (s *Service) current(d *navDisruption) (period, bool) {
-	now := s.now()
+// periodAt returns the period in force at t, else the next one; ok is false
+// when every period has ended by t.
+func (s *Service) periodAt(d *navDisruption, t time.Time) (period, bool) {
 	for _, p := range s.periods(d) {
-		if p.end.After(now) {
+		if p.end.After(t) {
 			return p, true
 		}
 	}
@@ -157,13 +156,19 @@ type EquipmentDisruption struct {
 func (s *Service) journeyDisruptions(j *navJourney, all map[string]*navDisruption) Disruptions {
 	out := Disruptions{Service: []ServiceDisruption{}, Equipment: []EquipmentDisruption{}}
 	stops := boardingStops(j)
+	// The periods are those of the journey's time, not of now: nightly works
+	// tonight say nothing of a trip next week.
+	at, readable := s.parseNavitia(j.DepartureDateTime)
+	if !readable {
+		at = s.now()
+	}
 	// PRIM republishes the same lift fault many times, each with its own end:
 	// it is listed once, until the latest end.
 	lifts := map[string]int{}
 	var liftEnds []time.Time
 	for _, ld := range linkedDisruptions(j, all) {
 		d := ld.d
-		p, ok := s.current(d)
+		p, ok := s.periodAt(d, at)
 		var from, until string
 		if ok {
 			from, until = s.iso(p.begin), s.iso(p.end)

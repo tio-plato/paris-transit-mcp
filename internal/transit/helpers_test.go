@@ -240,8 +240,12 @@ func journeysJSON(t *testing.T, journeys []handJourney, disruptions string) stri
 				"stop_date_times": []obj{{}, {}},
 			})
 		}
+		departure := "20261118T060000"
+		if len(j.rides) > 0 {
+			departure = j.rides[0].dep
+		}
 		js = append(js, obj{"type": j.kind, "duration": j.durationS, "nb_transfers": j.transfers,
-			"departure_date_time": "20261118T060000", "arrival_date_time": "20261118T070000",
+			"departure_date_time": departure, "arrival_date_time": "20261118T070000",
 			"durations": obj{"walking": j.walking}, "sections": sections})
 	}
 	var ds []any

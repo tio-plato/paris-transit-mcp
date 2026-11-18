@@ -531,3 +531,30 @@ func TestArrivalWithoutATimeIsRefused(t *testing.T) {
 		t.Errorf("sent %d Navitia requests", n)
 	}
 }
+
+func TestJourneyDisruptionGivesThePeriodOfTheJourney(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, at(t, "20261118T0521"))
+	// Nightly works, tonight and next Tuesday night.
+	works := `{"id": "works", "status": "future",
+		"severity": {"name": "perturbée", "effect": "SIGNIFICANT_DELAYS"},
+		"application_periods": [{"begin": "20261124T220000", "end": "20261125T050000"},
+			{"begin": "20261118T220000", "end": "20261119T050000"}],
+		"messages": [{"text": "RER B : travaux de nuit", "channel": {"content_type": "text/plain", "types": ["title"]}}],
+		"impacted_objects": [{"pt_object": {"id": "line:IDFM:C01743", "embedded_type": "line"}}]}`
+	journeys := journeysJSON(t, []handJourney{{kind: "best", transfers: 0, walking: 0, durationS: 1800, rides: []ride{
+		{from: gareDuNord, to: massy, dep: "20261124T230000", code: "B", trip: "", disruptions: []string{"works"}},
+	}}}, `[`+works+`]`)
+	e.fake.handle(navitia+"journeys", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, 200, journeys) })
+
+	out, err := e.svc.PlanJourney(t.Context(), plan("48.8809,2.3556", "48.7250,2.2590"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	service := out.Journeys[0].Disruptions.Service
+	if len(service) != 1 || service[0].From != "2026-11-24T22:00:00+01:00" ||
+		service[0].Until != "2026-11-25T05:00:00+01:00" {
+		t.Errorf("service %+v, want the night of the journey, 24 to 25 November", service)
+	}
+}
