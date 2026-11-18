@@ -2,10 +2,14 @@ package prim_test
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/tio-plato/paris-transit-mcp/internal/prim"
 )
@@ -86,5 +90,34 @@ func TestTokenFromEnvRefusesAnUnexpandedReference(t *testing.T) {
 	_, err := prim.TokenFromEnv(func(string) string { return "${PRIM_API_KEY}" })
 	if err == nil {
 		t.Fatal("no error for an unexpanded ${PRIM_API_KEY}")
+	}
+}
+
+func TestConcurrentRequestsArePacedByTheRate(t *testing.T) {
+	t.Parallel()
+	var mu sync.Mutex
+	var arrivals []time.Time
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		arrivals = append(arrivals, time.Now())
+		mu.Unlock()
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	t.Cleanup(srv.Close)
+	const rate, n = 20, 6
+	c := prim.New(prim.Config{BaseURL: srv.URL, Token: testToken, Timeout: 0, Rate: rate})
+
+	var wg sync.WaitGroup
+	for range n {
+		wg.Go(func() { _ = c.Navitia(t.Context(), "places", nil, &struct{}{}) })
+	}
+	wg.Wait()
+
+	slices.SortFunc(arrivals, func(a, b time.Time) int { return a.Compare(b) })
+	// n requests at rate a second span at least n-1 intervals, whatever their
+	// concurrency; a small margin absorbs the scheduler.
+	minSpan := time.Duration(n-1) * time.Second / rate * 9 / 10
+	if span := arrivals[n-1].Sub(arrivals[0]); span < minSpan {
+		t.Errorf("%d concurrent requests arrived within %v, want at least %v at %d a second", n, span, minSpan, rate)
 	}
 }
