@@ -16,6 +16,9 @@ func linesEnv(t *testing.T) *env {
 		"14": "20261118T0522-pt-objects-14.json",
 		"6":  "20261118T0523-pt-objects-6.json",
 		"b":  "20261118T0523-pt-objects-b.json",
+		// The search for B also returned metro 3B and 7B.
+		"3b": "20261118T0523-pt-objects-b.json",
+		"7b": "20261118T0523-pt-objects-b.json",
 	})
 	e.fake.handle(navitia+"line_reports/*", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, `{"line_reports": [], "disruptions": []}`)
@@ -124,5 +127,26 @@ func TestLineReportsNotFoundIsAnErrorNotAllClear(t *testing.T) {
 
 	if len(out.Lines) != 1 || out.Lines[0].Error == nil {
 		t.Errorf("lines %+v, want an error rather than no disruption", out.Lines)
+	}
+}
+
+func TestMetroBisLinesResolve(t *testing.T) {
+	t.Parallel()
+	e := linesEnv(t)
+
+	out, err := e.svc.LineStatus(t.Context(), status("M3bis", "Métro 3bis", "M3B", "7bis"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// PRIM codes metro 3bis 3B and 7bis 7B.
+	want := []string{"line:IDFM:C01386", "line:IDFM:C01386", "line:IDFM:C01386", "line:IDFM:C01387"}
+	if len(out.Lines) != len(want) {
+		t.Fatalf("lines %+v, want %d", out.Lines, len(want))
+	}
+	for i, l := range out.Lines {
+		if l.Error != nil || l.LineID != want[i] {
+			t.Errorf("line %d = %+v, want %s", i, l, want[i])
+		}
 	}
 }

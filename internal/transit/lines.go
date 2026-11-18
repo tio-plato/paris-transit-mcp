@@ -146,7 +146,8 @@ type lineQuery struct {
 
 var (
 	lineIDPattern = regexp.MustCompile(`^line:[A-Za-z0-9:_-]+$`)
-	metroShort    = regexp.MustCompile(`^m\s*(\d+(?:bis)?)$`)
+	metroShort    = regexp.MustCompile(`^m\s*(\d+(?:bis|b)?)$`)
+	bisCode       = regexp.MustCompile(`^(\d+)bis$`)
 	tramShort     = regexp.MustCompile(`^t\d+[a-z]?$`)
 )
 
@@ -173,8 +174,15 @@ func modeWords() []modeWord {
 }
 
 // parseLineName reads a line name such as "M14", "Métro 14", "RER B", "T3a",
-// "Tram 3a", "Bus 21", "Transilien J", "Noctilien N14", or a bare code.
+// "Tram 3a", "Bus 21", "Transilien J", "Noctilien N14", or a bare code. A
+// "bis" line is coded B, as PRIM codes metro 3bis 3B.
 func parseLineName(name string) lineQuery {
+	q := parseLineWords(name)
+	q.code = bisCode.ReplaceAllString(q.code, "${1}b")
+	return q
+}
+
+func parseLineWords(name string) lineQuery {
 	v := strings.Join(strings.Fields(strings.ToLower(name)), " ")
 	if m := metroShort.FindStringSubmatch(v); m != nil {
 		return lineQuery{modes: []string{modeMetro}, code: m[1]}
