@@ -1,6 +1,6 @@
 package main
 
-const placeDoc = `A place: a station or address name such as "Gare du Nord" or "12 rue de Rivoli Paris", ` +
+const placeDoc = `A place: a station, place or address name such as "Gare du Nord" or "Place de la Bastille", ` +
 	`"latitude,longitude" such as "48.8584,2.3470", or an id from a previous result or from candidates.`
 
 const timeDoc = `ISO 8601; without an offset, such as 2026-11-20T08:30, it is Paris time. ` +
@@ -33,7 +33,8 @@ profile step_free is for luggage, a pushchair or a wheelchair: it keeps routes t
 	`those without a broken lift. PRIM cannot count stairs.
 citymapper_url opens the same trip in Citymapper for live navigation: give it to the user.
 To compare several destinations by travel time, call rank_destinations once instead of this tool for each.
-no_transit_route means PRIM found no public transport, even from the stations within 500 m of each end.` + commonDoc
+no_transit_route means PRIM found no public transport, even from the nearest station within 500 m of an end that ` +
+	`is not a station.` + commonDoc
 
 const rankDoc = `Rank 1 to 20 destinations from one origin by door-to-door public transport time: duration, ` +
 	`transfers, walking, lines and a Citymapper link for each. Use it to pick among several places by travel time, ` +

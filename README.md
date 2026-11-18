@@ -18,14 +18,14 @@ PRIM cannot reach on foot by the nearest station, and says which times are live 
 
 | Tool | What it returns | PRIM requests |
 |---|---|---|
-| `plan_journey` | 2 to 5 journeys from A to B, leaving at or arriving by a time, in the order to present: rides, transfers, walking, faults and works on the lines, broken lifts at the stations where the journey boards, changes or alights, live data for the first ride and a Citymapper link | 1, plus place lookups; 1 per first ride leaving within 90 minutes; 2 to 3 more when PRIM finds only a long walk |
+| `plan_journey` | The journeys PRIM proposes from A to B, often 2 to 5, leaving at or arriving by a time, in the order to present: rides, transfers, walking, faults and works on the lines, broken lifts at the stations where the journey boards, changes or alights, live data for the first ride and a Citymapper link | 1, plus place lookups; 1 per first ride leaving within 90 minutes; 2 to 3 more when PRIM finds only a long walk |
 | `rank_destinations` | 1 to 20 destinations from one origin, sorted by door-to-door time, each with transfers, walking, lines and a Citymapper link | 1 per destination, plus place lookups |
 | `next_departures` | The next departures at a station, by line and direction, live when PRIM has live data, else from the timetable and marked so | 1 for the station's lines, plus 1 to 2 per line |
 | `line_status` | Faults, works and strikes of 1 to 10 lines, in force now or starting within a number of days | 1 per line, plus 1 per line name |
 
 Parameters:
 
-- A place is a station or address name (`Gare du Nord`, `12 rue de Rivoli Paris`), `latitude,longitude`
+- A place is a station, place or address name (`Gare du Nord`, `Place de la Bastille`), `latitude,longitude`
   (`48.8584,2.3470`) or an id from a previous result. Every result says in `resolved` what the place was understood
   as.
 - Times are ISO 8601. Without an offset, `2026-11-20T08:30` is Paris time. A time more than an hour in the past is
@@ -51,12 +51,14 @@ What the server decides:
 - **Walk-only answers.** A point PRIM cannot reach, such as inside the Forum des Halles, gets only a walk of three
   hours. When PRIM finds no public transport and only a walk over 30 minutes, the server replaces each end that is
   not a station by the nearest station within 500 m and asks again; if that fails too, the result is
-  `no_transit_route`, never the walk.
+  `no_transit_route`, never the walk. A walk over 30 minutes that PRIM proposes beside public transport is left out.
+  The Citymapper link still starts and ends where the user asked.
 - **Departures by line.** PRIM's departures for a whole station are capped at about 175 and silently drop lines at
   big stations, so the server asks for each line. Without lines it takes up to 12 lines of the station, RER and
   trains first, and lists the others in `skipped_lines`.
 - **Equipment faults.** PRIM publishes broken lifts as disruptions with the severity of a line fault. They are told
-  apart by their tag: `plan_journey` lists them under `equipment`, `line_status` leaves them out.
+  apart by their tag: `plan_journey` lists them under `equipment`, each lift once although PRIM republishes the
+  same fault many times; `line_status` leaves them out.
 
 Errors carry `{"error": {"code", "message"}}`. `auth`, `quota`, `upstream` and `bad_request` are MCP errors
 (`isError`); `not_found`, `no_transit_route`, `ambiguous_place` and `ambiguous_line` are answers to the query.

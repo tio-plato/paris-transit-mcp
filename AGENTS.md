@@ -17,9 +17,11 @@ data, written in Go. See README.md for what it does.
 - The repository holds no personal information: no PRIM token, home or work address, coordinates of a place
   someone lives or goes to, regular line or travel time. This covers code, tests, fixtures, the README, tool
   descriptions and commit messages, for the whole history.
-- Fixtures in `testdata/` are PRIM responses to queries about public places only: stations, and public squares
-  such as Châtelet or the Forum des Halles. Store response bodies only, never request headers.
-- Examples in the README and tool descriptions use stations and public places too.
+- Fixtures in `testdata/` are PRIM responses to queries about public places only: stations, public squares such
+  as Châtelet or the Forum des Halles, and street names asked as a public example of a name shared by many towns,
+  such as "12 rue Victor Hugo"; never an address someone lives or works at. Store response bodies only, never
+  request headers.
+- Examples in the README and tool descriptions use stations and public places, never a street address.
 
 ## PRIM
 

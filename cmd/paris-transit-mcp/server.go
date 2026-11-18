@@ -40,9 +40,10 @@ func addPlanJourney(server *mcp.Server, svc *transit.Service) error {
 		return err
 	}
 	describe(in, map[string]string{
-		"origin":              placeDoc,
-		"destination":         placeDoc,
-		"datetime":            "When to leave, or to arrive by with datetime_represents=arrival. " + timeDoc + " Default: now.",
+		"origin":      placeDoc,
+		"destination": placeDoc,
+		"datetime": "When to leave, or to arrive by with datetime_represents=arrival, which requires it. " +
+			timeDoc + " Default: now.",
 		"datetime_represents": "departure (default) or arrival.",
 		"profile": "standard (default), or step_free for luggage, a pushchair or a wheelchair: " +
 			"lift-only routes, those without a broken lift first.",
