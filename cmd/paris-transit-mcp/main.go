@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -44,8 +43,9 @@ func run() error {
 		return err
 	}
 	err = server.Run(ctx, &mcp.StdioTransport{})
-	// SIGINT or SIGTERM is how a client stops the server: no failure.
-	if err != nil && (ctx.Err() == nil || !errors.Is(err, context.Canceled)) {
+	// SIGINT or SIGTERM is how a client stops the server: whatever the
+	// session returns then, closed pipes included, is no failure.
+	if err != nil && ctx.Err() == nil {
 		return fmt.Errorf("serve MCP over stdio: %w", err)
 	}
 	return nil
