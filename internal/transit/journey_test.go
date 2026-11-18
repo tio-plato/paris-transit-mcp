@@ -666,3 +666,44 @@ func TestDisruptionsOverBeforeTheJourneyAreLeftOut(t *testing.T) {
 		t.Errorf("disruptions %+v, want none: both end before the journey", d)
 	}
 }
+
+func TestDisruptionsAreListedOnlyForTheTimeOfTheJourney(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, at(t, "20261118T0521"))
+	// The trip leaves at 18:00 tonight. Works next week say nothing of it; a
+	// strike whose periods PRIM does not give may well.
+	nextWeek := `{"id": "next-week", "status": "future",
+		"severity": {"name": "perturbée", "effect": "SIGNIFICANT_DELAYS"},
+		"application_periods": [{"begin": "20261124T220000", "end": "20261125T050000"}],
+		"messages": [{"text": "RER B : travaux la semaine prochaine", "channel": {"content_type": "text/plain", "types": ["title"]}}],
+		"impacted_objects": [{"pt_object": {"id": "line:IDFM:C01743", "embedded_type": "line"}}]}`
+	strike := `{"id": "strike", "status": "active",
+		"severity": {"name": "perturbée", "effect": "SIGNIFICANT_DELAYS"},
+		"application_periods": [],
+		"messages": [{"text": "RER B : mouvement social", "channel": {"content_type": "text/plain", "types": ["title"]}}],
+		"impacted_objects": [{"pt_object": {"id": "line:IDFM:C01743", "embedded_type": "line"}}]}`
+	journeys := journeysJSON(t, []handJourney{{kind: "best", transfers: 0, walking: 0, durationS: 1800, rides: []ride{
+		{
+			from:        gareDuNord,
+			to:          massy,
+			dep:         "20261118T180000",
+			code:        "B",
+			trip:        "",
+			disruptions: []string{"next-week", "strike"},
+		},
+	}}}, `[`+nextWeek+`,`+strike+`]`)
+	e.fake.handle(navitia+"journeys", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, 200, journeys) })
+
+	out, err := e.svc.PlanJourney(t.Context(), plan("48.8809,2.3556", "48.7250,2.2590"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var got []string
+	for _, d := range out.Journeys[0].Disruptions.Service {
+		got = append(got, d.Title)
+	}
+	if diff := cmp.Diff([]string{"RER B : mouvement social"}, got); diff != "" {
+		t.Errorf("service disruptions (-want +got):\n%s", diff)
+	}
+}

@@ -156,12 +156,7 @@ type EquipmentDisruption struct {
 func (s *Service) journeyDisruptions(j *navJourney, all map[string]*navDisruption) Disruptions {
 	out := Disruptions{Service: []ServiceDisruption{}, Equipment: []EquipmentDisruption{}}
 	stops := boardingStops(j)
-	// The periods are those of the journey's time, not of now: nightly works
-	// tonight say nothing of a trip next week.
-	at, readable := s.parseNavitia(j.DepartureDateTime)
-	if !readable {
-		at = s.now()
-	}
+	at, arrival := s.journeyWindow(j)
 	// PRIM republishes the same lift fault many times, each with its own end:
 	// it is listed once, until the latest end.
 	type lift struct {
@@ -171,10 +166,13 @@ func (s *Service) journeyDisruptions(j *navJourney, all map[string]*navDisruptio
 	lifts := map[string]lift{}
 	for _, ld := range linkedDisruptions(j, all) {
 		d := ld.d
-		p, inForce := s.periodAt(d, at)
-		if !inForce {
-			// Over before the journey: nothing to tell about this trip.
+		p, dated, listed := s.periodFor(d, at, arrival)
+		if !listed {
 			continue
+		}
+		var from, until string
+		if dated {
+			from, until = s.iso(p.begin), s.iso(p.end)
 		}
 		switch {
 		case d.equipment():
@@ -182,7 +180,7 @@ func (s *Service) journeyDisruptions(j *navJourney, all map[string]*navDisruptio
 			if !found {
 				continue
 			}
-			e := EquipmentDisruption{Stop: stop, Title: d.title(), Text: d.text(), Until: s.iso(p.end)}
+			e := EquipmentDisruption{Stop: stop, Title: d.title(), Text: d.text(), Until: until}
 			key := e.Stop + "\x00" + e.Title + "\x00" + e.Text
 			if l, dup := lifts[key]; dup {
 				if p.end.After(l.end) {
@@ -195,12 +193,41 @@ func (s *Service) journeyDisruptions(j *navJourney, all map[string]*navDisruptio
 			out.Equipment = append(out.Equipment, e)
 		case !d.silent():
 			out.Service = append(out.Service, ServiceDisruption{
-				Lines: ld.lines, Status: d.Status, Title: d.title(), Text: d.text(),
-				From: s.iso(p.begin), Until: s.iso(p.end),
+				Lines: ld.lines, Status: d.Status, Title: d.title(), Text: d.text(), From: from, Until: until,
 			})
 		}
 	}
 	return out
+}
+
+// journeyWindow is the time of a journey, from its departure to its arrival.
+func (s *Service) journeyWindow(j *navJourney) (time.Time, time.Time) {
+	at, ok := s.parseNavitia(j.DepartureDateTime)
+	if !ok {
+		at = s.now()
+	}
+	arrival, ok := s.parseNavitia(j.ArrivalDateTime)
+	if !ok || arrival.Before(at) {
+		arrival = at
+	}
+	return at, arrival
+}
+
+// periodFor returns the period of d that bears on a journey from at to
+// arrival: in force at departure, else the next one. Periods are those of the
+// journey's time, not of now: works tonight say nothing of a trip next week,
+// nor works next week of a trip tonight. listed is false when d is over before
+// the journey or starts after it. A disruption without readable periods is
+// listed, without dates: dated is false.
+func (s *Service) periodFor(d *navDisruption, at, arrival time.Time) (period, bool, bool) {
+	if len(s.periods(d)) == 0 {
+		return period{}, false, true
+	}
+	p, ok := s.periodAt(d, at)
+	if !ok || p.begin.After(arrival) {
+		return period{}, false, false
+	}
+	return p, true, true
 }
 
 // boardingStops maps the stop areas where a journey boards, changes or
