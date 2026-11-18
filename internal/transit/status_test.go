@@ -264,13 +264,13 @@ func TestLineStatusDaysBoundTheUpcomingWorks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The match on the 21st at 16:00 is 3 days and 6 hours away.
-	if upcoming := titles(
-		out.Lines[0].Upcoming,
-	); slices.Contains(
-		upcoming,
-		"RER D - Stade de France - Match Rugby 21/11.",
-	) {
+	// The match on the 21st at 16:00 is 3 days and 6 hours away; the night
+	// works from Paris Lyon start tonight.
+	upcoming := titles(out.Lines[0].Upcoming)
+	if slices.Contains(upcoming, "RER D - Stade de France - Match Rugby 21/11.") {
 		t.Errorf("upcoming %v holds the match, beyond 3 days", upcoming)
+	}
+	if !slices.Contains(upcoming, "RER D : Paris Lyon <> Melun / Corbeil interrompu 02-27/11.") {
+		t.Errorf("upcoming %v, want the works starting tonight", upcoming)
 	}
 }
