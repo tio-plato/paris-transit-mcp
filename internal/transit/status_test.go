@@ -110,3 +110,19 @@ func TestDisruptionTitleKeepsItsArrowAndTextLosesItsHTML(t *testing.T) {
 		t.Errorf("text %q, want the HTML as plain text", r.Text)
 	}
 }
+
+func TestLineReportsNotFoundIsAnErrorNotAllClear(t *testing.T) {
+	t.Parallel()
+	e := linesEnv(t)
+	// A gateway 404 has no Navitia body; a line with no disruption answers 200.
+	e.fake.status(navitia+"line_reports/*", http.StatusNotFound)
+
+	out, err := e.svc.LineStatus(t.Context(), status("RER B"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(out.Lines) != 1 || out.Lines[0].Error == nil {
+		t.Errorf("lines %+v, want an error rather than no disruption", out.Lines)
+	}
+}

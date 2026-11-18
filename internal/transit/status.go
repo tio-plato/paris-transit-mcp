@@ -93,8 +93,9 @@ func (s *Service) lineStatus(ctx context.Context, name string, days int) (*LineS
 		return nil, err
 	}
 	var resp lineReportsResponse
+	// A line without disruption answers 200; a 404 is never "all clear".
 	err = s.prim.Navitia(ctx, "line_reports/lines/"+l.ID+"/line_reports", nil, &resp)
-	if err != nil && AsToolError(err).Code != CodeNotFound {
+	if err != nil {
 		return nil, err
 	}
 	out := &LineStatus{Line: l.label(), LineID: l.ID, Active: []Report{}, Upcoming: []Report{}, Error: nil}
