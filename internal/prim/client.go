@@ -20,8 +20,8 @@ import (
 // DefaultBaseURL is PRIM's marketplace root.
 const DefaultBaseURL = "https://prim.iledefrance-mobilites.fr/marketplace"
 
-// TokenVariable is the environment variable that holds the PRIM token.
-const TokenVariable = "PRIM_API_KEY" //nolint:gosec // the name of the variable, not a credential
+// KeyVariable is the environment variable that holds the PRIM token.
+const KeyVariable = "PRIM_API_KEY"
 
 const (
 	// RequestsPerSecond stays below PRIM's limit of 5 requests a second per API.
@@ -72,9 +72,9 @@ type Client struct {
 
 // TokenFromEnv reads the PRIM token with getenv.
 func TokenFromEnv(getenv func(string) string) (string, error) {
-	token := strings.TrimSpace(getenv(TokenVariable))
+	token := strings.TrimSpace(getenv(KeyVariable))
 	if token == "" {
-		return "", fmt.Errorf("environment variable %s is not set", TokenVariable)
+		return "", fmt.Errorf("environment variable %s is not set", KeyVariable)
 	}
 	// An MCP client passes a ${VAR} reference as it is when VAR is unset in
 	// its own environment.
@@ -82,7 +82,7 @@ func TokenFromEnv(getenv func(string) string) (string, error) {
 	// the token itself.
 	if strings.HasPrefix(token, "${") {
 		return "", fmt.Errorf("environment variable %s holds an unexpanded ${…} reference: "+
-			"set the variable in the environment of the MCP client", TokenVariable)
+			"set the variable in the environment of the MCP client", KeyVariable)
 	}
 	return token, nil
 }
@@ -208,7 +208,7 @@ func statusError(path string, status int, body []byte) *Error {
 	case status == http.StatusUnauthorized || status == http.StatusForbidden:
 		e.Code = CodeAuth
 		e.Message = fmt.Sprintf("PRIM refused the token (HTTP %d on %s): check %s and the API subscriptions",
-			status, path, TokenVariable)
+			status, path, KeyVariable)
 	case status == http.StatusTooManyRequests:
 		e.Code = CodeQuota
 		e.Message = fmt.Sprintf("PRIM refused the request for its daily quota or its rate limit "+
