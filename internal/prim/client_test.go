@@ -86,10 +86,14 @@ func TestNavitiaIDsToSIRIRefs(t *testing.T) {
 
 func TestTokenFromEnvRefusesAnUnexpandedReference(t *testing.T) {
 	t.Parallel()
-	// A client that cannot expand ${PRIM_API_KEY} passes the reference as it is.
-	_, err := prim.TokenFromEnv(func(string) string { return "${PRIM_API_KEY}" })
+	// A client that cannot expand ${PRIM_API_KEY} passes the reference as it
+	// is, with the fallback a user may have written in it.
+	_, err := prim.TokenFromEnv(func(string) string { return "${PRIM_API_KEY:-" + testToken + "}" })
 	if err == nil {
 		t.Fatal("no error for an unexpanded ${PRIM_API_KEY}")
+	}
+	if strings.Contains(err.Error(), testToken) {
+		t.Errorf("error %q holds the fallback token", err)
 	}
 }
 

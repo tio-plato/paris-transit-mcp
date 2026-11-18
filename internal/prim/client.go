@@ -78,9 +78,11 @@ func TokenFromEnv(getenv func(string) string) (string, error) {
 	}
 	// An MCP client passes a ${VAR} reference as it is when VAR is unset in
 	// its own environment.
+	// The value is not repeated: a fallback written in the reference may be
+	// the token itself.
 	if strings.HasPrefix(token, "${") {
-		return "", fmt.Errorf("environment variable %s holds the unexpanded reference %s: "+
-			"set the variable in the environment of the MCP client", TokenVariable, token)
+		return "", fmt.Errorf("environment variable %s holds an unexpanded ${…} reference: "+
+			"set the variable in the environment of the MCP client", TokenVariable)
 	}
 	return token, nil
 }
