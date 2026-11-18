@@ -18,7 +18,8 @@ Every result says in resolved what the server understood a place as; tell the us
 Errors: a result with error.code ambiguous_place or ambiguous_line lists candidates: show them to the user, let ` +
 	`them choose, then call again with the chosen candidate's id (or line_id); never pick a town or a line yourself. ` +
 	`not_found and no_transit_route are answers to tell the user. auth, quota, upstream and bad_request are errors: ` +
-	`quota means the daily PRIM quota is spent; do not retry a quota or auth error.`
+	`quota means PRIM refused for its daily quota or its rate limit; do not retry an auth error, nor a quota ` +
+	`error right away.`
 
 const planJourneyDoc = `Door-to-door public transport journeys from one place to another (metro, RER, ` +
 	`Transilien, tram, bus and walking), leaving at or arriving by a time.

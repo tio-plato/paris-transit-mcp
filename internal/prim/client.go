@@ -211,7 +211,8 @@ func statusError(path string, status int, body []byte) *Error {
 			status, path, TokenVariable)
 	case status == http.StatusTooManyRequests:
 		e.Code = CodeQuota
-		e.Message = fmt.Sprintf("PRIM quota exceeded (HTTP 429 on %s): wait before asking again", path)
+		e.Message = fmt.Sprintf("PRIM refused the request for its daily quota or its rate limit "+
+			"(HTTP 429 on %s): wait before asking again", path)
 	case status == http.StatusNotFound:
 		e.Code = CodeNotFound
 		e.Message = fmt.Sprintf("PRIM found nothing for %s%s", path, detail)
