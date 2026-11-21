@@ -11,7 +11,7 @@ MCP server for Paris public transport on PRIM data, in Go. See README.md.
 - Releases: cut one when the user asks, from the card that asked. Tag a commit already on `origin/main` whose `ci`
   run there passed: `git tag -s vX.Y.Z -m vX.Y.Z <sha>`, then `git push origin vX.Y.Z`. CI checks it, builds a draft
   release, smoke-tests it on every platform and publishes it. Don't create the release on GitHub yourself: CI
-  uploads into a release that already exists, skipping the draft and the smoke test.
+  would upload into it while it is already public, before the smoke test has run.
 - Never move or delete a pushed tag: the Go module proxy and checksum database keep the first content they saw,
   so `go install` fails for anyone who got the old one. If a release is broken, fix it and release the next
   version; delete a draft that failed its smoke test.
