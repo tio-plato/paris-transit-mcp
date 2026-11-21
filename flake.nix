@@ -15,23 +15,30 @@
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
     in
     {
-      packages = forAllSystems (pkgs: {
-        default = pkgs.buildGoModule {
-          pname = "paris-transit-mcp";
+      packages = forAllSystems (
+        pkgs:
+        let
           version = self.shortRev or self.dirtyShortRev or "dirty";
-          src = self;
-          vendorHash = "sha256-+A01o/aeFALXmV2UxDIfLZG2W3vQ7E4e0kkHkp+ZFIY=";
-          ldflags = [
-            "-s"
-            "-w"
-          ];
-          meta = {
-            description = "Read-only MCP server for Île-de-France public transport, on PRIM data";
-            homepage = "https://github.com/tio-plato/paris-transit-mcp";
-            mainProgram = "paris-transit-mcp";
+        in
+        {
+          default = pkgs.buildGoModule {
+            pname = "paris-transit-mcp";
+            inherit version;
+            src = self;
+            vendorHash = "sha256-+A01o/aeFALXmV2UxDIfLZG2W3vQ7E4e0kkHkp+ZFIY=";
+            ldflags = [
+              "-s"
+              "-w"
+              "-X main.version=${version}"
+            ];
+            meta = {
+              description = "Read-only MCP server for Île-de-France public transport, on PRIM data";
+              homepage = "https://github.com/tio-plato/paris-transit-mcp";
+              mainProgram = "paris-transit-mcp";
+            };
           };
-        };
-      });
+        }
+      );
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
@@ -39,6 +46,7 @@
             pkgs.go
             pkgs.gopls
             pkgs.golangci-lint
+            pkgs.goreleaser
           ];
         };
       });
