@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: paris-transit-mcp
+
+before:
+  hooks:
+    - scripts/third-party-licenses.sh
+
+builds:
+  - main: ./cmd/paris-transit-mcp
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    # The default ldflags also set main.version, but without the leading v.
+    ldflags:
+      - -s -w -X main.version=v{{ .Version }}
+
+archives:
+  # No version in the name, so releases/latest/download/<name> stays valid.
+  - name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+      - src: build/THIRD_PARTY_LICENSES
+        strip_parent: true
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+release:
+  # CI publishes it once the smoke test passes on every platform.
+  draft: true

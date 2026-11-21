@@ -3,3 +3,5 @@
 .claude/todou/
 .todou.toml
 result
+build/
+dist/
