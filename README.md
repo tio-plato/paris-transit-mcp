@@ -24,40 +24,124 @@ A few things the server handles so the model doesn't have to:
 
 ## Setup
 
+Give your agent this repository's URL and a PRIM token: it can follow the steps below on Linux, macOS or Windows,
+x86_64 or ARM, without Go or Nix.
+
 1. Get a token from [PRIM](https://prim.iledefrance-mobilites.fr). If your browser's language is Chinese, the site
    reloads forever: switch it to English or French.
-2. Install:
+2. Install the program (below).
+3. Add it to the client's MCP config (below).
 
-   ```sh
-   go install github.com/tio-plato/paris-transit-mcp/cmd/paris-transit-mcp@latest
-   # or
-   nix run github:tio-plato/paris-transit-mcp
-   ```
+### Install
 
-3. Set `PRIM_API_KEY` in the client's config.
+Each release has one archive per system, `paris-transit-mcp_<os>_<arch>.tar.gz` (`.zip` on Windows), where `<os>` is
+`linux`, `darwin` or `windows` and `<arch>` is `amd64` for x86_64 or `arm64` for aarch64 and arm64. The commands
+below pick the archive, download it and `checksums.txt` from the latest release, stop if the checksum doesn't match,
+and print the program's absolute path.
 
-Claude Code (`.mcp.json`):
+Linux and macOS, into `~/.local/bin`:
+
+```sh
+sh -eu <<'EOF'
+case $(uname -s) in Linux) os=linux ;; Darwin) os=darwin ;; *) echo "unsupported: $(uname -s)" >&2; exit 1 ;; esac
+case $(uname -m) in x86_64) arch=amd64 ;; aarch64 | arm64) arch=arm64 ;; *) echo "unsupported: $(uname -m)" >&2; exit 1 ;; esac
+file=paris-transit-mcp_${os}_${arch}.tar.gz
+url=https://github.com/tio-plato/paris-transit-mcp/releases/latest/download
+tmp=$(mktemp -d)
+cd "$tmp"
+curl -fsSLO "$url/$file"
+curl -fsSLO "$url/checksums.txt"
+line=$(grep "  $file\$" checksums.txt)
+if command -v sha256sum >/dev/null; then
+  echo "$line" | sha256sum -c -
+else
+  echo "$line" | shasum -a 256 -c -
+fi
+mkdir -p "$HOME/.local/bin"
+tar -xzf "$file" -C "$HOME/.local/bin" paris-transit-mcp
+rm -rf "$tmp"
+echo "$HOME/.local/bin/paris-transit-mcp"
+EOF
+```
+
+Windows (PowerShell), into `%LOCALAPPDATA%\Programs\paris-transit-mcp`:
+
+```powershell
+& {
+  $ErrorActionPreference = 'Stop'
+  $ProgressPreference = 'SilentlyContinue'
+  $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'amd64' }
+  $file = "paris-transit-mcp_windows_$arch.zip"
+  $url = 'https://github.com/tio-plato/paris-transit-mcp/releases/latest/download'
+  $dir = "$env:LOCALAPPDATA\Programs\paris-transit-mcp"
+  $tmp = New-Item -ItemType Directory -Path (Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid()))
+  Invoke-WebRequest "$url/$file" -OutFile "$tmp\$file" -UseBasicParsing
+  Invoke-WebRequest "$url/checksums.txt" -OutFile "$tmp\checksums.txt" -UseBasicParsing
+  $line = Get-Content "$tmp\checksums.txt" | Where-Object { $_ -match "^[0-9a-f]{64}  $([regex]::Escape($file))$" }
+  if (-not $line) { throw "$file is not in checksums.txt" }
+  if ((Get-FileHash "$tmp\$file" -Algorithm SHA256).Hash -ne $line.Split(' ')[0]) { throw "checksum mismatch: $file" }
+  Expand-Archive "$tmp\$file" -DestinationPath $dir -Force -ErrorAction Stop
+  Remove-Item $tmp -Recurse
+  "$dir\paris-transit-mcp.exe"
+}
+```
+
+To update, run the same commands again and restart the client.
+
+With Go or Nix, these work too:
+
+```sh
+go install github.com/tio-plato/paris-transit-mcp/cmd/paris-transit-mcp@latest   # latest release
+nix run github:tio-plato/paris-transit-mcp                                         # follows main
+```
+
+### Configure
+
+Use the absolute path the install printed: the client doesn't always have `~/.local/bin` in its `PATH`. Keep the
+token where the client keeps its secrets, not in the config.
+
+Hermes: add this to `~/.hermes/config.yaml` and put `PRIM_API_KEY=<token>` in `~/.hermes/.env`. Hermes passes only
+the variables listed under `env`, so keep that line.
+
+```yaml
+mcp_servers:
+  paris-transit:
+    command: /path/to/paris-transit-mcp
+    env:
+      PRIM_API_KEY: ${PRIM_API_KEY}
+```
+
+OpenClaw: add this to `~/.openclaw/openclaw.json`, put `PRIM_API_KEY=<token>` in `~/.openclaw/.env`, then run
+`openclaw gateway restart` so the gateway reads it.
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "paris-transit": {
+        "command": "/path/to/paris-transit-mcp",
+        "env": {"PRIM_API_KEY": "${PRIM_API_KEY}"}
+      }
+    }
+  }
+}
+```
+
+Claude Code: add this to `.mcp.json` and set `PRIM_API_KEY` in the environment Claude Code starts from.
 
 ```json
 {
   "mcpServers": {
     "paris-transit": {
-      "command": "paris-transit-mcp",
+      "command": "/path/to/paris-transit-mcp",
       "env": {"PRIM_API_KEY": "${PRIM_API_KEY}"}
     }
   }
 }
 ```
 
-Hermes (`config.yaml`):
-
-```yaml
-mcp_servers:
-  paris-transit:
-    command: paris-transit-mcp
-    env:
-      PRIM_API_KEY: ${PRIM_API_KEY}
-```
+Other clients take the same `mcpServers` JSON. If a client doesn't expand `${…}`, write the token itself there; the
+config file then holds a secret. If the server gets the placeholder unexpanded, it stops at startup and says so.
 
 The default quota is 1000 requests a day per API, plenty for one person. You can raise it for free on PRIM.
 
