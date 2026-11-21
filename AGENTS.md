@@ -7,7 +7,15 @@ MCP server for Paris public transport on PRIM data, in Go. See README.md.
 - Target branch: `main`.
 - Setup: `nix develop -c true`.
 - Checks: `nix flake check` (build with all tests, golangci-lint).
-- Landing: `git push origin <sha>:main`. No release step.
+- Landing: `git push origin <sha>:main`.
+- Releases: cut one when the user asks, from the card that asked. Tag a commit already on `origin/main`:
+  `git tag -s vX.Y.Z -m vX.Y.Z <sha>`, then `git push origin vX.Y.Z`. CI checks it, builds a draft release,
+  smoke-tests it on every platform and publishes it.
+- Never move or delete a pushed tag: the Go module proxy and checksum database keep the first content they saw,
+  so `go install` fails for anyone who got the old one. If a release is broken, fix it and release the next
+  version; delete a draft that failed its smoke test.
+- Versions follow SemVer: `feat` bumps the minor version, only `fix` the patch. Before 1.0, breaking changes bump
+  the minor version too.
 - Conventional Commits.
 
 ## Writing
