@@ -36,6 +36,8 @@ jobs:
       - run: nix develop -c goreleaser release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Otherwise GoReleaser picks the highest tag on the commit, which smoke and publish don't use.
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
 
   smoke:
     needs: release
