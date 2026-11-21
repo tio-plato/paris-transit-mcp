@@ -70,7 +70,9 @@ Windows (PowerShell), into `%LOCALAPPDATA%\Programs\paris-transit-mcp`:
 & {
   $ErrorActionPreference = 'Stop'
   $ProgressPreference = 'SilentlyContinue'
-  $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'amd64' }
+  $cpu = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+  $arch = @{ AMD64 = 'amd64'; ARM64 = 'arm64' }[$cpu]
+  if (-not $arch) { throw "unsupported: $cpu" }
   $file = "paris-transit-mcp_windows_$arch.zip"
   $url = 'https://github.com/tio-plato/paris-transit-mcp/releases/latest/download'
   $dir = "$env:LOCALAPPDATA\Programs\paris-transit-mcp"
