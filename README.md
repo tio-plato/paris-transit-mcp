@@ -88,19 +88,21 @@ Windows (PowerShell), into `%LOCALAPPDATA%\Programs\paris-transit-mcp`:
 }
 ```
 
-To update, run the same commands again and restart the client.
+To update, run the same commands again and restart the client. On Windows, quit the client first: Windows can't
+replace a program that is running.
 
 With Go or Nix, these work too:
 
 ```sh
-go install github.com/tio-plato/paris-transit-mcp/cmd/paris-transit-mcp@latest   # latest release
+go install github.com/tio-plato/paris-transit-mcp/cmd/paris-transit-mcp@latest   # latest tag
 nix run github:tio-plato/paris-transit-mcp                                         # follows main
 ```
 
 ### Configure
 
-Use the absolute path the install printed: the client doesn't always have `~/.local/bin` in its `PATH`. Keep the
-token where the client keeps its secrets, not in the config.
+Use the absolute path the install printed: the client doesn't always have `~/.local/bin` in its `PATH`. In JSON,
+double the backslashes of a Windows path (`C:\\Users\\…`). Keep the token where the client keeps its secrets, not
+in the config.
 
 Hermes: add this to `~/.hermes/config.yaml` and put `PRIM_API_KEY=<token>` in `~/.hermes/.env`. Hermes passes only
 the variables listed under `env`, so keep that line.
