@@ -38,3 +38,5 @@ checksum:
 release:
   # CI publishes it once the smoke test passes on every platform.
   draft: true
+  # A rerun replaces the draft instead of adding a second one for the tag.
+  replace_existing_draft: true
