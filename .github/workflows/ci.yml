@@ -19,6 +19,25 @@ jobs:
       - uses: cachix/install-nix-action@bb0495a1086c46893eee56f32fd192dfe4a15bb9 # v32.0.0
       - run: nix flake check -L
 
+  # Builds the release archives on every push, so a broken config shows up before a tag.
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@bb0495a1086c46893eee56f32fd192dfe4a15bb9 # v32.0.0
+      - run: nix develop -c goreleaser release --snapshot --clean
+      - name: Check the archives
+        run: |
+          # The names README.md downloads from releases/latest/download.
+          want=$(printf '%s\n' checksums.txt paris-transit-mcp_{linux,darwin}_{amd64,arm64}.tar.gz \
+            paris-transit-mcp_windows_{amd64,arm64}.zip | sort)
+          got=$(cd dist && printf '%s\n' *.tar.gz *.zip checksums.txt | sort)
+          [[ $got == "$want" ]] || { printf 'unexpected archives:\n%s\n' "$got" >&2; exit 1; }
+          tar -xzf dist/paris-transit-mcp_linux_amd64.tar.gz -C "$RUNNER_TEMP" paris-transit-mcp
+          bash scripts/smoke.sh "$RUNNER_TEMP/paris-transit-mcp" "v$(jq -r .version dist/metadata.json)"
+
   # Builds the archives into a draft release, which smoke tests before publish.
   release:
     if: startsWith(github.ref, 'refs/tags/v')
