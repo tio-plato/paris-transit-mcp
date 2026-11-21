@@ -51,7 +51,7 @@ tmp=$(mktemp -d)
 cd "$tmp"
 curl -fsSLO "$url/$file"
 curl -fsSLO "$url/checksums.txt"
-line=$(grep "  $file\$" checksums.txt)
+line=$(grep "  $file\$" checksums.txt) || { echo "$file is not in checksums.txt" >&2; exit 1; }
 if command -v sha256sum >/dev/null; then
   echo "$line" | sha256sum -c -
 else
