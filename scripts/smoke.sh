@@ -11,17 +11,21 @@ fi
 bin=$1
 want=$2
 
+log=$(mktemp)
+trap 'rm -f "$log"' EXIT
 status=0
-out=$(
-	{
-		printf '%s\n' \
-			'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}' \
-			'{"jsonrpc":"2.0","method":"notifications/initialized"}' \
-			'{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
-		# Closing stdin right away drops the replies.
-		sleep 2
-	} | PRIM_API_KEY=dummy "$bin" 2>&1
-) || status=$?
+{
+	printf '%s\n' \
+		'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}' \
+		'{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+		'{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+	# Closing stdin drops the replies still in flight: wait for the last one, 30 s at most.
+	for ((i = 0; i < 150; i++)); do
+		grep -q '"id":2,' "$log" && break
+		sleep 0.2
+	done
+} | PRIM_API_KEY=dummy "$bin" >"$log" 2>&1 || status=$?
+out=$(<"$log")
 
 fail() {
 	echo "smoke: $bin: $*" >&2
